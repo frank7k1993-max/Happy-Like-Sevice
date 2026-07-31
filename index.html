@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ระบบอ่านบัตร — สแกนจากโฟลเดอร์ · จัดการข้อมูล · ส่งออก Excel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#e8e6e0;--card:#fbfaf7;--ink:#1c1e1b;--ink2:#5c605a;--ink3:#8f938c;--line:#d3d0c7;--line2:#e6e3db;
+--go:#136b52;--go-soft:rgba(19,107,82,.10);--save:#2f5fa8;--warn:#b8622a;--warn-soft:rgba(184,98,42,.10);--stop:#a8352a;--r:10px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Sarabun',-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace}
+.wrap{max-width:1360px;margin:0 auto;padding:16px 16px 60px}
+header{border:1px solid var(--line);background:var(--card);border-radius:var(--r);padding:11px 16px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:16px;font-weight:700;margin:0}
+.tabs{display:flex;gap:6px;margin-left:8px}
+.tab{font-family:inherit;font-size:13px;font-weight:600;color:var(--ink2);background:transparent;border:1px solid transparent;border-radius:7px;padding:6px 14px;cursor:pointer}
+.tab.on{background:var(--ink);color:#f4f3ef}
+header .store{margin-left:auto;font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;border:1px dashed var(--line);border-radius:99px;padding:3px 10px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:13px;align-items:start}
+@media(max-width:980px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);background:var(--card);border-radius:var(--r);overflow:hidden;margin-bottom:13px}
+.card>.hd{padding:9px 13px;border-bottom:1px solid var(--line2);display:flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.card>.bd{padding:12px}
+#drop{border:1.5px dashed var(--line);border-radius:8px;background:#f3f1ec;padding:18px 14px;text-align:center;cursor:pointer;transition:.15s}
+#drop:hover,#drop.over{border-color:var(--go);background:var(--go-soft)}
+#drop .big{font-size:14px;font-weight:600}
+#drop .small{font-size:12px;color:var(--ink2)}
+#stage{position:relative;margin-top:10px;display:none;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:#efece6}
+#cv{display:block;width:100%;height:auto;touch-action:none}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px;font-size:12px;color:var(--ink2)}
+.tools input[type=range]{accent-color:var(--go);width:100px}
+button.act{width:100%;font-family:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--go);border:1px solid transparent;border-radius:8px;padding:10px;cursor:pointer}
+button.act:hover{filter:brightness(1.08)}
+button.act:disabled{background:#b8bcb5;cursor:not-allowed}
+button.act.red{background:var(--stop)}
+button.ghost{font-family:inherit;font-size:12.5px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:7px;padding:6px 10px;cursor:pointer}
+button.ghost:hover{border-color:var(--ink3)}
+button.ghost:disabled{color:var(--ink3);cursor:not-allowed}
+button.ghost.arm{background:var(--stop);color:#fff;border-color:transparent}
+button.blue{background:var(--save);color:#fff;border-color:transparent}
+button.mini{padding:2px 7px;font-size:11px}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+select,input.tin,input.search{font-family:inherit;font-size:13px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+select{flex:1;min-width:130px}
+input.tin{width:145px}
+input.search{width:230px}
+.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer}
+.chk input{accent-color:var(--go);width:15px;height:15px}
+#prog{display:none;margin-top:10px}
+#bar{height:6px;background:var(--line2);border-radius:99px;overflow:hidden}
+#bar i{display:block;height:100%;width:0;background:var(--go);transition:width .25s}
+#pmsg{font-size:11.5px;color:var(--ink2);margin-top:5px;font-family:'IBM Plex Mono',monospace}
+.f{border-bottom:1px solid var(--line2);padding:8px 12px}
+.f.off{opacity:.42}
+.f .top{display:flex;align-items:center;gap:8px}
+.f .name{font-size:12px;font-weight:600;flex:1;min-width:0}
+.f .k{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink3);border:1px solid var(--line2);border-radius:4px;padding:0 5px}
+.f .k.auto{color:var(--go);border-color:rgba(19,107,82,.3)}
+.f .k.saved{color:var(--save);border-color:rgba(47,95,168,.3)}
+.f input[type=checkbox]{accent-color:var(--go);width:15px;height:15px}
+.f .val{margin-top:5px;display:flex;gap:8px;align-items:flex-start}
+.f .txt{flex:1;min-width:0;font-size:15px;font-weight:600;padding:5px 8px;border:1px solid var(--line2);border-radius:6px;background:#fff;outline:none;word-break:break-word;min-height:32px}
+.f .txt:focus{border-color:var(--go)}
+.f.low .txt{background:var(--warn-soft);border-color:rgba(184,98,42,.35)}
+.f .conf{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink3);padding-top:9px;white-space:nowrap}
+.f.low .conf{color:var(--warn)}
+.f .note{margin-top:3px;font-size:11.5px}
+.f .alt{margin-top:3px;font-size:11.5px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.f .alt b{color:var(--ink2);font-weight:500;cursor:pointer;border-bottom:1px dotted var(--ink3)}
+.ok{color:var(--go)}.bad{color:var(--stop)}
+.foot{padding:10px 12px;display:flex;gap:7px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line2)}
+.foot .mono{font-size:11px;color:var(--ink3)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:var(--card);text-align:left;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3);font-family:'IBM Plex Mono',monospace;font-weight:500;padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:2;cursor:pointer;user-select:none}
+th:hover{color:var(--ink)}
+td{padding:6px 9px;border-bottom:1px solid var(--line2);vertical-align:middle}
+td.n{font-family:'IBM Plex Mono',monospace;color:var(--ink3);font-size:11px;white-space:nowrap}
+td[contenteditable]{outline:none;min-width:88px}
+td[contenteditable]:focus{background:#fff;box-shadow:inset 0 0 0 1.5px var(--go)}
+tr.rev td{background:var(--warn-soft)}
+tr.done td{background:rgba(19,107,82,.05)}
+tr:hover td{background:#f2efe9}
+td img{display:block;width:104px;height:auto;border:1px solid var(--line2);border-radius:4px}
+.collist{border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.col{display:flex;align-items:center;gap:8px;padding:5px 9px;border-bottom:1px solid var(--line2);background:#fff}
+.col:last-child{border-bottom:none}
+.col.dim{background:#f6f4ef}
+.col .grip{color:var(--ink3);cursor:grab;font-size:13px}
+.col input.hname{flex:1;min-width:0;font-family:inherit;font-size:12.5px;border:1px solid transparent;background:transparent;border-radius:5px;padding:3px 6px;color:var(--ink)}
+.col input.hname:focus{border-color:var(--go);background:#fff;outline:none}
+.col .src{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink3)}
+.col.drag{opacity:.4}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#f4f3ef;font-size:13px;padding:9px 16px;border-radius:99px;opacity:0;pointer-events:none;transition:.2s;z-index:60}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.tip{font-size:11.5px;color:var(--ink3);margin-top:8px;line-height:1.5}
+.hide{display:none}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ระบบอ่านบัตร</h1>
+  <div class="tabs">
+    <button class="tab on" data-tab="scan">สแกน</button>
+    <button class="tab" data-tab="data">ข้อมูล <span id="tabN" class="mono" style="font-size:11px"></span></button>
+  </div>
+  <span class="store" id="storeInfo">—</span>
+</header>
+
+<!-- ================= แท็บสแกน ================= -->
+<div id="tabScan">
+<div class="grid">
+  <div>
+    <div class="card">
+      <div class="hd">1 — รูป / โฟลเดอร์</div>
+      <div class="bd">
+        <div id="drop"><div class="big">ลากรูป หรือลากทั้งโฟลเดอร์มาวาง</div>
+          <div class="small">ไฟล์อยู่ในเครื่องคุณตลอด ไม่มีการอัปโหลดไปที่ไหน</div></div>
+        <input type="file" id="file" accept="image/*" multiple hidden>
+        <input type="file" id="dir" webkitdirectory directory multiple hidden>
+        <div class="row" style="margin-top:9px">
+          <button class="ghost" id="pickDir">เลือกโฟลเดอร์…</button>
+          <button class="ghost" id="pickOne">เลือกรูปตั้งค่ากรอบ</button>
+          <span class="mono" id="dirInfo" style="font-size:11px;color:var(--ink3)"></span>
+        </div>
+        <div id="stage"><canvas id="cv"></canvas></div>
+        <div class="tools" id="tools" style="display:none">
+          <span>หมุน</span><input type="range" id="rot" min="-12" max="12" step="0.5" value="0"><span class="mono" id="rotv">0.0°</span>
+          <button class="ghost" id="rot90">90°</button>
+          <button class="ghost" id="redoAnchor">หากรอบจากป้ายบนบัตร</button>
+        </div>
+        <div class="tip" id="tip" style="display:none">กรอบ<b style="color:var(--save)"> น้ำเงิน</b> = ชุดที่จำไว้ · <b style="color:var(--go)">เขียว</b> = หาเองจากป้าย · <b>เทา</b> = มาตรฐาน · <b style="color:#6b4e9e">ม่วง</b> = ลากเอง</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd">2 — ชุดกรอบ &amp; ตัวเลือก</div>
+      <div class="bd">
+        <div class="row">
+          <select id="tplSel"><option value="">— ยังไม่ใช้ชุดที่จำไว้ —</option></select>
+          <button class="ghost" id="tplDel">ลบ</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input class="tin" id="tplName" placeholder="ชื่อชุด เช่น สแกนเนอร์ HR">
+          <button class="ghost blue" id="tplSave">จำกรอบชุดนี้</button>
+          <button class="ghost" id="tplExp">ส่งออก</button>
+          <button class="ghost" id="tplImp">นำเข้า</button>
+          <input type="file" id="tplFile" accept="application/json" hidden>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <span class="mono" style="font-size:11px;color:var(--ink3)">อ้างอิงกรอบ</span>
+          <select id="mode">
+            <option value="img">ตามขนาดรูป — ทุกรูปในโฟลเดอร์เหมือนกัน (เร็วที่สุด)</option>
+            <option value="card">ตามขอบบัตรในแต่ละรูป — รูปครอปไม่เท่ากัน</option>
+          </select>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label class="chk"><input type="checkbox" id="optFast" checked>โหมดเร็ว</label>
+          <label class="chk"><input type="checkbox" id="optAnchor">ตรวจตำแหน่งจากป้ายทุกรูป</label>
+          <label class="chk"><input type="checkbox" id="optThumb" checked>เก็บรูปย่อ</label>
+          <label class="chk"><input type="checkbox" id="optSkip" checked>ข้ามไฟล์ที่เคยอ่านแล้ว</label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="act" id="runBatch" style="flex:1" disabled>อ่านทั้งโฟลเดอร์</button>
+          <button class="act red" id="stopBatch" style="width:100px;display:none">หยุด</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="ghost" id="runOne" disabled>อ่านรูปที่เปิดอยู่</button>
+          <button class="ghost" id="armCard">ตีกรอบรอบบัตรเอง</button>
+          <button class="ghost" id="clrBoxes">ล้างกรอบ</button>
+        </div>
+        <div id="prog"><div id="bar"><i></i></div><div id="pmsg"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="hd">3 — ตั้งกรอบ / ค่าของรูปที่เปิดอยู่</div>
+    <div id="fields"></div>
+    <div class="foot"><span class="mono" id="stat">ยังไม่ได้อ่าน</span>
+      <button class="ghost" id="btnKeep" style="margin-left:auto">เก็บลงข้อมูล</button></div>
+  </div>
+</div>
+</div>
+
+<!-- ================= แท็บข้อมูล ================= -->
+<div id="tabData" class="hide">
+  <div class="card">
+    <div class="hd">คอลัมน์ที่จะแสดง / ส่งออก
+      <span style="margin-left:auto;text-transform:none;letter-spacing:0">ลากเพื่อสลับลำดับ · แก้ชื่อหัวคอลัมน์ได้</span></div>
+    <div class="bd">
+      <div class="row" style="margin-bottom:9px">
+        <select id="csSel"><option value="">— ชุดคอลัมน์ —</option></select>
+        <input class="tin" id="csName" placeholder="ชื่อชุดคอลัมน์">
+        <button class="ghost blue" id="csSave">บันทึกชุด</button>
+        <button class="ghost" id="csDel">ลบชุด</button>
+        <button class="ghost" id="colAdd">+ คอลัมน์กรอกเอง</button>
+        <button class="ghost" id="colAll">เลือกทั้งหมด</button>
+        <button class="ghost" id="colNone">ไม่เลือกเลย</button>
+      </div>
+      <div class="collist" id="collist"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="hd">ข้อมูลที่อ่านได้ <span id="dataN" style="margin-left:auto;text-transform:none;letter-spacing:0"></span></div>
+    <div class="foot" style="border-top:none;border-bottom:1px solid var(--line2)">
+      <input class="search" id="q" placeholder="ค้นหา ชื่อ / เลขบัตร / ไฟล์…">
+      <label class="chk"><input type="checkbox" id="onlyRev">เฉพาะที่ต้องตรวจ</label>
+      <label class="chk"><input type="checkbox" id="showThumb" checked>รูปย่อ</label>
+      <span class="mono" id="selInfo" style="margin-left:auto"></span>
+      <button class="ghost" id="expXlsx" style="background:var(--go);color:#fff;border-color:transparent">ส่งออก Excel (.xlsx)</button>
+      <button class="ghost" id="expCsv">CSV</button>
+      <button class="ghost" id="delSel">ลบที่เลือก</button>
+      <button class="ghost" id="clrAll">ล้างทั้งหมด</button>
+    </div>
+    <div style="overflow:auto;max-height:72vh"><table id="tbl"></table></div>
+  </div>
+</div>
+
+</div>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* =====================================================================
+   ระบบอ่านบัตร — เว็บแอปหน้ากากสำหรับไฟล์ในเครื่องผู้ใช้
+   · รูปทั้งหมดอ่านในเบราว์เซอร์ ไม่มีการอัปโหลด
+   · ข้อมูลที่อ่านได้เก็บใน IndexedDB ของเครื่องนี้ (ถ้าใช้ไม่ได้จะถอยไป localStorage)
+   · ส่งออก Excel โดยเลือกคอลัมน์ ลำดับ และชื่อหัวคอลัมน์เองได้
+   ===================================================================== */
+const $=id=>document.getElementById(id);
+let src=null,base=null,angle=0,armed=null,cardRect=null,busy=false,cancel=false,worker={},wjob='',curName='',batchOn=false;
+let rows=[],files=[];
+let tT;const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('on'),2800);};
+
+/* ---------------- แท็บ ---------------- */
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
+  $('tabScan').classList.toggle('hide',b.dataset.tab!=='scan');
+  $('tabData').classList.toggle('hide',b.dataset.tab!=='data');
+  if(b.dataset.tab==='data'){renderCols();renderTable();}
+});
+
+/* ---------------- ช่องบนบัตร ---------------- */
+const LAT='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const FIELDS=[
+  {k:'name_th', label:'ชื่อ–สกุล (ไทย)',    short:'ชื่อไทย',   on:true,  lang:'tha',psm:'7',kind:'th',      rel:{x:.27,y:.205,w:.60,h:.10}},
+  {k:'name_en', label:'Name (อังกฤษ)',       short:'Name',      on:true,  lang:'eng',psm:'7',kind:'en',      rel:{x:.39,y:.300,w:.42,h:.075},white:LAT+'. '},
+  {k:'last_en', label:'Last name (อังกฤษ)',  short:'Last name', on:true,  lang:'eng',psm:'7',kind:'en',      rel:{x:.45,y:.375,w:.40,h:.075},white:LAT+'. '},
+  {k:'exp_en',  label:'Date of Expiry',      short:'หมดอายุ EN', on:true, lang:'eng',psm:'7',kind:'date_en', rel:{x:.54,y:.868,w:.32,h:.070},white:'0123456789'+LAT+'. '},
+  {k:'exp_th',  label:'วันบัตรหมดอายุ (ไทย)', short:'หมดอายุ TH',on:true, lang:'tha',psm:'7',kind:'date_th', rel:{x:.54,y:.762,w:.32,h:.070}},
+  {k:'id',      label:'เลขประจำตัว 13 หลัก',  short:'เลขบัตร',   on:false, lang:'eng',psm:'7',kind:'id',      rel:{x:.34,y:.062,w:.55,h:.080},white:'0123456789 '},
+  {k:'dob_en',  label:'Date of Birth',       short:'เกิด EN',   on:false, lang:'eng',psm:'7',kind:'date_en', rel:{x:.35,y:.512,w:.35,h:.070},white:'0123456789'+LAT+'. '},
+  {k:'issue_en',label:'Date of Issue',       short:'ออกบัตร EN',on:false, lang:'eng',psm:'7',kind:'date_en', rel:{x:.03,y:.868,w:.32,h:.070},white:'0123456789'+LAT+'. '},
+  {k:'addr_th', label:'ที่อยู่ (ไทย)',        short:'ที่อยู่',    on:false, lang:'tha',psm:'6',kind:'th',      rel:{x:.03,y:.600,w:.53,h:.150}}
+];
+const F=Object.fromEntries(FIELDS.map(f=>[f.k,{...f,box:null,srcOf:'',text:'',conf:null,alt:[],note:''}]));
+
+/* ---------------- ที่เก็บข้อมูล ---------------- */
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+          set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
+const DB={
+  db:null,ok:false,
+  async open(){
+    try{
+      this.db=await new Promise((res,rej)=>{
+        const q=indexedDB.open('cardocr',1);
+        q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('rows'))d.createObjectStore('rows',{keyPath:'id'});};
+        q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);
+        setTimeout(()=>rej(new Error('timeout')),4000);
+      });
+      this.ok=true;
+    }catch(e){this.ok=false;}
+    return this.ok;
+  },
+  tx(mode){return this.db.transaction('rows',mode).objectStore('rows');},
+  async all(){ if(!this.ok)return LS.get('cardocr:rows',[]);
+    return new Promise(r=>{const q=this.tx('readonly').getAll();q.onsuccess=()=>r(q.result||[]);q.onerror=()=>r([]);}); },
+  async put(row){ if(!this.ok){const a=LS.get('cardocr:rows',[]);const i=a.findIndex(x=>x.id===row.id);
+      const slim={...row,thumb:null}; if(i<0)a.push(slim);else a[i]=slim; LS.set('cardocr:rows',a);return;}
+    return new Promise(r=>{const q=this.tx('readwrite').put(row);q.onsuccess=q.onerror=()=>r();}); },
+  async del(id){ if(!this.ok){LS.set('cardocr:rows',LS.get('cardocr:rows',[]).filter(x=>x.id!==id));return;}
+    return new Promise(r=>{const q=this.tx('readwrite').delete(id);q.onsuccess=q.onerror=()=>r();}); },
+  async clear(){ if(!this.ok){LS.set('cardocr:rows',[]);return;}
+    return new Promise(r=>{const q=this.tx('readwrite').clear();q.onsuccess=q.onerror=()=>r();}); }
+};
+(async()=>{
+  await DB.open();
+  rows=(await DB.all()).sort((a,b)=>(a.at||'').localeCompare(b.at||''));
+  $('storeInfo').textContent=(DB.ok?'เก็บใน IndexedDB':'เก็บใน localStorage (รูปย่อไม่ถูกบันทึก)')+' · '+rows.length+' รายการ';
+  renderTable();updateN();
+})();
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+async function saveRow(r){ await DB.put(r); $('storeInfo').textContent=(DB.ok?'เก็บใน IndexedDB':'เก็บใน localStorage')+' · '+rows.length+' รายการ'; }
+
+/* ---------------- ชุดกรอบ ---------------- */
+const TKEY='cardocr:templates',LKEY='cardocr:last',OKEY='cardocr:opts';
+let TPL=LS.get(TKEY,{}),curTpl=LS.get(LKEY,'');
+const opts=LS.get(OKEY,{fast:true,anchor:false,thumb:true,skip:true,mode:'img'});
+$('optFast').checked=opts.fast!==false;$('optAnchor').checked=!!opts.anchor;$('optThumb').checked=opts.thumb!==false;
+$('optSkip').checked=opts.skip!==false;$('mode').value=opts.mode||'img';
+['optFast','optAnchor','optThumb','optSkip','mode'].forEach(id=>$(id).onchange=()=>LS.set(OKEY,
+  {fast:$('optFast').checked,anchor:$('optAnchor').checked,thumb:$('optThumb').checked,skip:$('optSkip').checked,mode:$('mode').value}));
+function tplRefresh(){
+  const names=Object.keys(TPL).sort();
+  $('tplSel').innerHTML='<option value="">— ยังไม่ใช้ชุดที่จำไว้ —</option>'+
+    names.map(n=>'<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===curTpl?' selected':'')+'>'+n+'</option>').join('');
+  if(curTpl&&!TPL[curTpl])curTpl='';$('tplName').value=curTpl||'';
+}
+$('tplSel').onchange=e=>{curTpl=e.target.value;LS.set(LKEY,curTpl);$('tplName').value=curTpl;
+  if(curTpl&&base){applyTpl(curTpl);draw();renderFields();toast('ใช้ชุด “'+curTpl+'” แล้ว');}};
+$('tplSave').onclick=()=>{
+  if(!base){toast('เปิดรูปก่อน');return;}
+  const name=($('tplName').value||'').trim()||('ชุด '+(Object.keys(TPL).length+1));
+  const t={saved:new Date().toISOString(),fields:{}};let n=0;
+  FIELDS.forEach(f=>{const s=F[f.k];if(!s.box)return;
+    const e={on:s.on,img:{x:s.box.x/base.width,y:s.box.y/base.height,w:s.box.w/base.width,h:s.box.h/base.height}};
+    if(cardRect)e.card={x:(s.box.x-cardRect.x)/cardRect.w,y:(s.box.y-cardRect.y)/cardRect.h,w:s.box.w/cardRect.w,h:s.box.h/cardRect.h};
+    t.fields[f.k]=e;n++;});
+  if(!n){toast('ยังไม่มีกรอบให้จำ');return;}
+  TPL[name]=t;curTpl=name;LS.set(TKEY,TPL);LS.set(LKEY,name);tplRefresh();
+  FIELDS.forEach(f=>{if(F[f.k].box)F[f.k].srcOf='saved';});renderFields();draw();
+  toast('จำกรอบ '+n+' ช่องไว้ในชุด “'+name+'” แล้ว');
+};
+$('tplDel').onclick=()=>{if(!curTpl)return;const n=curTpl;delete TPL[n];curTpl='';LS.set(TKEY,TPL);LS.set(LKEY,'');tplRefresh();toast('ลบชุด “'+n+'” แล้ว');};
+$('tplExp').onclick=()=>{if(!Object.keys(TPL).length){toast('ยังไม่มีชุด');return;}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(TPL,null,1)],{type:'application/json'}));
+  a.download='ชุดกรอบสแกนบัตร.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);};
+$('tplImp').onclick=()=>$('tplFile').click();
+$('tplFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const j=JSON.parse(r.result);let n=0;Object.entries(j).forEach(([k,v])=>{if(v&&v.fields){TPL[k]=v;n++;}});
+    LS.set(TKEY,TPL);tplRefresh();toast('นำเข้า '+n+' ชุดแล้ว');}catch(err){toast('ไฟล์ไม่ถูกต้อง');}};
+  r.readAsText(f);e.target.value='';};
+function applyTpl(name){
+  const t=TPL[name];if(!t||!base)return 0;let n=0;
+  const useImg=$('mode').value==='img';
+  Object.entries(t.fields).forEach(([k,v])=>{if(!F[k])return;
+    const useI=useImg||!v.card, r=useI?v.img:v.card, ref=useI?{x:0,y:0,w:base.width,h:base.height}:cardRect;
+    if(!r||!ref)return;
+    F[k].box={x:ref.x+r.x*ref.w,y:ref.y+r.y*ref.h,w:r.w*ref.w,h:r.h*ref.h};
+    F[k].srcOf='saved';if(typeof v.on==='boolean')F[k].on=v.on;n++;});
+  return n;
+}
+tplRefresh();
+
+/* ---------------- รับไฟล์/โฟลเดอร์ ---------------- */
+$('drop').onclick=()=>$('file').click();
+$('pickOne').onclick=()=>$('file').click();
+$('pickDir').onclick=()=>$('dir').click();
+$('file').onchange=e=>{const fs=onlyImgs([...e.target.files]);e.target.value='';take(fs);};
+$('dir').onchange=e=>{const fs=onlyImgs([...e.target.files]);e.target.value='';take(fs,true);};
+['dragenter','dragover'].forEach(v=>$('drop').addEventListener(v,e=>{e.preventDefault();$('drop').classList.add('over')}));
+$('drop').addEventListener('dragleave',e=>{e.preventDefault();$('drop').classList.remove('over')});
+$('drop').addEventListener('drop',async e=>{
+  e.preventDefault();$('drop').classList.remove('over');
+  const items=[...(e.dataTransfer.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+  let out=[];
+  if(items.some(i=>i.isDirectory)){toast('กำลังอ่านรายชื่อไฟล์…');for(const it of items)await walk(it,out);}
+  else out=[...e.dataTransfer.files];
+  take(onlyImgs(out),out.length>1);
+});
+async function walk(entry,out){
+  if(entry.isFile)return new Promise(r=>entry.file(f=>{out.push(f);r();},r));
+  if(entry.isDirectory){const rd=entry.createReader();
+    while(true){const b=await new Promise(r=>rd.readEntries(r,()=>r([])));if(!b.length)break;for(const e2 of b)await walk(e2,out);}}
+}
+const onlyImgs=l=>l.filter(f=>/\.(jpe?g|png|webp|bmp|gif)$/i.test(f.name||'')||(f.type||'').startsWith('image/'))
+                   .sort((a,b)=>(a.name||'').localeCompare(b.name||'',undefined,{numeric:true}));
+function take(fs,folder){
+  files=fs;$('dirInfo').textContent=fs.length?fs.length+' ไฟล์':'';$('runBatch').disabled=!fs.length;
+  if(!fs.length){toast('ไม่พบไฟล์รูป');return;}
+  if(fs.length===1||!curTpl){openImage(fs[0]).catch(e=>toast(e.message));}
+  if(folder||fs.length>1)toast('พบ '+fs.length+' รูป — '+(curTpl?'กด “อ่านทั้งโฟลเดอร์” ได้เลย':'ตั้งกรอบจากรูปแรก แล้วกด “จำกรอบชุดนี้”'));
+}
+function openImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file),img=new Image();
+    img.onload=async()=>{src=img;curName=file.name;angle=0;$('rot').value=0;$('rotv').textContent='0.0°';
+      FIELDS.forEach(f=>Object.assign(F[f.k],{box:null,srcOf:'',text:'',conf:null,alt:[],note:''}));
+      rebase();$('stage').style.display='block';$('tools').style.display='flex';$('tip').style.display='block';$('runOne').disabled=false;
+      await prepBoxes();draw();renderFields();URL.revokeObjectURL(url);res();};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('เปิดรูปไม่ได้: '+file.name));};
+    img.src=url;});
+}
+function rebase(){
+  if(!src)return;
+  const a=angle*Math.PI/180,c=Math.abs(Math.cos(a)),s=Math.abs(Math.sin(a));
+  const W=Math.round(src.width*c+src.height*s),H=Math.round(src.width*s+src.height*c);
+  base=document.createElement('canvas');base.width=W;base.height=H;
+  const g=base.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,W,H);
+  g.translate(W/2,H/2);g.rotate(a);g.imageSmoothingQuality='high';g.drawImage(src,-src.width/2,-src.height/2);
+}
+$('rot').oninput=e=>{angle=+e.target.value;$('rotv').textContent=angle.toFixed(1)+'°';rebase();draw();};
+$('rot90').onclick=()=>{angle=(angle+90)%360;$('rot').value=0;$('rotv').textContent=angle+'°';rebase();draw();};
+$('redoAnchor').onclick=async()=>{if(!base||busy)return;busy=true;
+  try{detectCard();presetBoxes();await anchorBoxes();draw();renderFields();toast('หากรอบใหม่แล้ว');}catch(e){}finally{busy=false;$('prog').style.display='none';}};
+async function prepBoxes(){
+  const useImg=$('mode').value==='img';
+  cardRect=null;
+  if(!useImg||$('optAnchor').checked||!curTpl)detectCard();
+  if(curTpl&&TPL[curTpl]){ if(!applyTpl(curTpl)){if(!cardRect)detectCard();presetBoxes();} }
+  else {if(!cardRect)detectCard();presetBoxes();}
+  if($('optAnchor').checked||!curTpl){if(!cardRect)detectCard();try{await anchorBoxes();}catch(e){}}
+}
+
+/* ---------------- ตรวจขอบบัตร / ป้ายกำกับ ---------------- */
+function detectCard(){
+  const W=Math.min(720,base.width),H=Math.round(base.height*W/base.width);
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const g=c.getContext('2d');g.drawImage(base,0,0,W,H);
+  const p=g.getImageData(0,0,W,H).data,at=(x,y)=>{const i=(y*W+x)*4;return[p[i],p[i+1],p[i+2]];};
+  const R=[],G=[],B=[];
+  for(let x=0;x<W;x+=2){[at(x,0),at(x,H-1)].forEach(v=>{R.push(v[0]);G.push(v[1]);B.push(v[2])});}
+  for(let y=0;y<H;y+=2){[at(0,y),at(W-1,y)].forEach(v=>{R.push(v[0]);G.push(v[1]);B.push(v[2])});}
+  const med=a=>{a.sort((x,y)=>x-y);return a[a.length>>1];},bg=[med(R),med(G),med(B)];
+  const col=new Uint32Array(W),row=new Uint32Array(H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=(y*W+x)*4;
+    if(Math.abs(p[i]-bg[0])+Math.abs(p[i+1]-bg[1])+Math.abs(p[i+2]-bg[2])>60){col[x]++;row[y]++;}}
+  const span=(arr,lim)=>{let a=-1,b=-1;for(let i=0;i<arr.length;i++)if(arr[i]>lim){a=i;break;}
+    for(let i=arr.length-1;i>=0;i--)if(arr[i]>lim){b=i;break;}return[a,b];};
+  const [x0,x1]=span(col,H*.10),[y0,y1]=span(row,W*.10),k=base.width/W;
+  if(x0<0||y0<0||x1-x0<W*.3||y1-y0<H*.25){cardRect={x:0,y:0,w:base.width,h:base.height};return false;}
+  const px=(x1-x0)*.012,py=(y1-y0)*.015;
+  cardRect={x:Math.max(0,(x0-px)*k),y:Math.max(0,(y0-py)*k),
+            w:Math.min(base.width,(x1-x0+px*2)*k),h:Math.min(base.height,(y1-y0+py*2)*k)};
+  return true;
+}
+function presetBoxes(){ if(!cardRect)return;
+  FIELDS.forEach(f=>{const r=f.rel;
+    F[f.k].box={x:cardRect.x+r.x*cardRect.w,y:cardRect.y+r.y*cardRect.h,w:r.w*cardRect.w,h:r.h*cardRect.h};F[f.k].srcOf='preset';});}
+async function anchorBoxes(){
+  if(!cardRect)return 0;
+  const S=Math.min(3,1700/cardRect.w),cw=Math.round(cardRect.w*S),ch=Math.round(cardRect.h*S);
+  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
+  const g=cv.getContext('2d');g.imageSmoothingQuality='high';
+  g.drawImage(base,cardRect.x,cardRect.y,cardRect.w,cardRect.h,0,0,cw,ch);
+  wjob='หาตำแหน่งช่อง';
+  const w=await getWorker('eng');
+  await w.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:'',preserve_interword_spaces:'1'});
+  const {data}=await w.recognize(cv);
+  const ws=allWords(data).filter(x=>x.text&&x.text.trim()&&(x.confidence||0)>35).map(x=>({t:x.text.trim(),...x.bbox,h:x.bbox.y1-x.bbox.y0}));
+  if(!ws.length)return 0;
+  const find=(re,skip)=>{const c=ws.filter(x=>re.test(x.t)&&(!skip||!skip(x)));return c.sort((a,b)=>b.h-a.h)[0]||null;};
+  const sameLine=(a,b)=>Math.abs((a.y0+a.y1)/2-(b.y0+b.y1)/2)<Math.max(a.h,b.h)*.6;
+  const B=(x0,y0,x1,y1)=>({x:cardRect.x+Math.max(0,x0)/S,y:cardRect.y+Math.max(0,y0)/S,
+                           w:(Math.min(cw,x1)-Math.max(0,x0))/S,h:(Math.min(ch,y1)-Math.max(0,y0))/S});
+  const set=(k,b)=>{if(b.w>4&&b.h>3){F[k].box=b;F[k].srcOf='auto';}};let n=0;
+  const wLast=find(/^Last$/i),wName=find(/^Name$/i,x=>wLast&&sameLine(x,wLast)&&x.x0>wLast.x0),
+        wExp=find(/^Expiry$/i),wIss=find(/^Issue$/i),wBir=find(/^Birth$/i),wNum=find(/^Number$/i);
+  if(wName){const h=wName.h;set('name_en',B(wName.x1+h*.25,wName.y0-h*.45,cw*.80,wName.y1+h*.40));
+    set('name_th',B(cw*.22,wName.y0-h*2.45,cw*.84,wName.y0-h*.10));n+=2;}
+  if(wLast){const h=wLast.h;const after=ws.filter(x=>sameLine(x,wLast)&&x.x0>wLast.x1-h*.2&&/^name/i.test(x.t))[0];
+    set('last_en',B((after?after.x1:wLast.x1+h*2.3)+h*.25,wLast.y0-h*.45,cw*.86,wLast.y1+h*.40));n++;}
+  if(wBir){const h=wBir.h;set('dob_en',B(wBir.x1+h*.3,wBir.y0-h*.45,wBir.x1+h*9,wBir.y1+h*.40));n++;}
+  if(wNum){const h=wNum.h;set('id',B(wNum.x1+h*.3,wNum.y0-h*1.7,cw*.95,wNum.y1-h*.10));n++;}
+  const dateFrom=(a,kEn,kTh)=>{const h=a.h;const line=ws.filter(x=>sameLine(x,a)&&/^Date$/i.test(x.t))[0];
+    const x0=(line?line.x0:a.x0-h*3.4)-h*.4,x1=x0+h*9.5;
+    set(kEn,B(x0,a.y0-h*2.25,x1,a.y0-h*.20));n++;
+    if(kTh){set(kTh,B(x0,a.y0-h*5.35,x1,a.y0-h*3.05));n++;}};
+  if(wExp)dateFrom(wExp,'exp_en','exp_th');
+  if(wIss)dateFrom(wIss,'issue_en',null);
+  return n;
+}
+function allWords(d){
+  if(Array.isArray(d.words)&&d.words.length)return d.words;
+  const out=[];(d.blocks||[]).forEach(b=>(b.paragraphs||[]).forEach(p=>(p.lines||[]).forEach(l=>(l.words||[]).forEach(w=>out.push(w)))));
+  return out;}
+
+/* ---------------- วาด + ลากกรอบ ---------------- */
+const COLOR={saved:'#2f5fa8',auto:'#136b52',preset:'#8f938c',manual:'#6b4e9e'};
+function draw(){
+  if(!base)return;
+  const cv=$('cv'),W=Math.min(base.width,1100),H=Math.round(base.height*W/base.width);
+  cv.width=W;cv.height=H;const g=cv.getContext('2d');g.drawImage(base,0,0,W,H);
+  const k=W/base.width;
+  if(cardRect){g.strokeStyle='rgba(28,30,27,.30)';g.setLineDash([6,4]);g.lineWidth=1.4;
+    g.strokeRect(cardRect.x*k,cardRect.y*k,cardRect.w*k,cardRect.h*k);g.setLineDash([]);}
+  FIELDS.forEach(f=>{const s=F[f.k],b=s.box;if(!b||(!s.on&&armed!==f.k))return;
+    const arm=armed===f.k,col=arm?'#a8352a':(COLOR[s.srcOf]||'#8f938c');
+    g.strokeStyle=col;g.lineWidth=arm?2.5:1.8;g.strokeRect(b.x*k,b.y*k,b.w*k,b.h*k);
+    g.font='600 11px IBM Plex Mono, monospace';const tw=g.measureText(f.short).width+8;
+    g.fillStyle=col;g.fillRect(b.x*k,Math.max(0,b.y*k-14),tw,14);
+    g.fillStyle='#fff';g.fillText(f.short,b.x*k+4,Math.max(10,b.y*k-3));});
+}
+(function(){
+  const cv=$('cv');let sx=0,sy=0,on=false;
+  const pt=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};};
+  cv.addEventListener('pointerdown',e=>{if(!base||!armed)return;on=true;cv.setPointerCapture(e.pointerId);const q=pt(e);sx=q.x;sy=q.y;});
+  cv.addEventListener('pointermove',e=>{if(!on)return;const q=pt(e);draw();
+    const g=cv.getContext('2d');g.strokeStyle='#a8352a';g.lineWidth=2;
+    g.strokeRect(Math.min(sx,q.x)*cv.width,Math.min(sy,q.y)*cv.height,Math.abs(q.x-sx)*cv.width,Math.abs(q.y-sy)*cv.height);});
+  cv.addEventListener('pointerup',e=>{if(!on)return;on=false;const q=pt(e);
+    const l=Math.min(sx,q.x),t=Math.min(sy,q.y),w=Math.abs(q.x-sx),h=Math.abs(q.y-sy);
+    if(w<.01||h<.006){draw();return;}
+    const box={x:l*base.width,y:t*base.height,w:w*base.width,h:h*base.height};
+    if(armed==='card'){cardRect=box;presetBoxes();toast('ตั้งกรอบบัตรแล้ว');}
+    else{F[armed].box=box;F[armed].srcOf='manual';toast('ตั้งกรอบแล้ว — อย่าลืมกด “จำกรอบชุดนี้”');}
+    setArm(null);renderFields();draw();});
+})();
+function setArm(k){armed=k;$('armCard').classList.toggle('arm',k==='card');
+  document.querySelectorAll('[data-arm]').forEach(b=>b.classList.toggle('arm',b.dataset.arm===k));
+  $('cv').style.cursor=k?'crosshair':'default';draw();}
+$('armCard').onclick=()=>{if(!base){toast('เปิดรูปก่อน');return;}setArm(armed==='card'?null:'card');};
+$('clrBoxes').onclick=()=>{FIELDS.forEach(f=>{F[f.k].box=null;F[f.k].srcOf='';});renderFields();draw();};
+
+/* ---------------- OCR ---------------- */
+function cut(box,scale,thresh){
+  const pad=Math.round(box.h*.10),bx=Math.max(0,box.x-pad),by=Math.max(0,box.y-pad);
+  const bw=Math.min(base.width-bx,box.w+pad*2),bh=Math.min(base.height-by,box.h+pad*2);
+  let cw=Math.round(bw*scale);if(cw>3000){scale=3000/bw;cw=3000;}
+  const ch=Math.max(8,Math.round(bh*scale)),m=14;
+  const cv=document.createElement('canvas');cv.width=cw+m*2;cv.height=ch+m*2;
+  const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,cv.width,cv.height);
+  g.imageSmoothingQuality='high';g.drawImage(base,bx,by,bw,bh,m,m,cw,ch);
+  const d=g.getImageData(0,0,cv.width,cv.height),p=d.data,W=cv.width,H=cv.height;
+  const gray=new Uint8ClampedArray(W*H);
+  for(let i=0,j=0;i<p.length;i+=4,j++)gray[j]=Math.min(p[i],p[i+1],p[i+2]);
+  let out;
+  if(thresh)out=bradley(gray,W,H,Math.max(15,Math.round(H/5)),.13);
+  else{const hist=new Uint32Array(256);for(let j=0;j<gray.length;j++)hist[gray[j]]++;
+    let lo=0,hi=255,acc=0,n=gray.length;
+    for(let v=0;v<256;v++){acc+=hist[v];if(acc>n*.05){lo=v;break;}}
+    acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>n*.05){hi=v;break;}}
+    const sp=Math.max(1,hi-lo);out=new Uint8ClampedArray(W*H);
+    for(let j=0;j<gray.length;j++)out[j]=Math.max(0,Math.min(255,(gray[j]-lo)*255/sp));}
+  for(let i=0,j=0;i<p.length;i+=4,j++){p[i]=p[i+1]=p[i+2]=out[j];p[i+3]=255;}
+  g.putImageData(d,0,0);return cv;
+}
+function bradley(gray,W,H,win,k){
+  const I=new Float64Array((W+1)*(H+1));
+  for(let y=1;y<=H;y++){let rs=0;for(let x=1;x<=W;x++){rs+=gray[(y-1)*W+(x-1)];I[y*(W+1)+x]=I[(y-1)*(W+1)+x]+rs;}}
+  const out=new Uint8ClampedArray(W*H),h=Math.round(win/2);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const x1=Math.max(0,x-h),y1=Math.max(0,y-h),x2=Math.min(W-1,x+h),y2=Math.min(H-1,y+h);
+    const cnt=(x2-x1+1)*(y2-y1+1);
+    const sum=I[(y2+1)*(W+1)+(x2+1)]-I[y1*(W+1)+(x2+1)]-I[(y2+1)*(W+1)+x1]+I[y1*(W+1)+x1];
+    out[y*W+x]=gray[y*W+x]*cnt<sum*(1-k)?0:255;}
+  return out;}
+const STATUS={'loading tesseract core':'กำลังโหลดเครื่องมือ OCR','initializing tesseract':'กำลังเตรียมเครื่องมือ',
+ 'loading language traineddata':'กำลังโหลดไฟล์ภาษา','initializing api':'กำลังเริ่มระบบ','recognizing text':'กำลังอ่าน'};
+function prog(s,p,l){$('prog').style.display='block';$('bar').firstElementChild.style.width=Math.round((p||0)*100)+'%';
+  $('pmsg').textContent=((l||wjob)?((l||wjob)+' · '):'')+(STATUS[s]||s)+' '+Math.round((p||0)*100)+'%';}
+function progBatch(i,n,t0){const el=(Date.now()-t0)/1000,per=i?el/i:0,left=Math.round(per*(n-i));
+  $('prog').style.display='block';$('bar').firstElementChild.style.width=Math.round(i/n*100)+'%';
+  $('pmsg').textContent='อ่านแล้ว '+i+'/'+n+' รูป'+(i?' · เหลืออีกประมาณ '+(left>90?Math.ceil(left/60)+' นาที':left+' วินาที'):'');}
+async function getWorker(lang){
+  if(worker[lang])return worker[lang];
+  worker[lang]=await Tesseract.createWorker(lang,1,{logger:m=>{if(!batchOn)prog(m.status,m.progress);}});
+  return worker[lang];}
+async function readField(f){
+  wjob=f.label;const w=await getWorker(f.lang);
+  const passes=$('optFast').checked?[{t:true,scale:5,psm:f.psm},{t:false,scale:5,psm:f.psm}]
+    :[{t:true,scale:5,psm:f.psm},{t:false,scale:5,psm:f.psm},{t:true,scale:8,psm:'13'},{t:false,scale:3,psm:'6'}];
+  const cand=[];
+  for(const ps of passes){
+    await w.setParameters({tessedit_pageseg_mode:ps.psm,preserve_interword_spaces:'1',
+      tessedit_char_whitelist:(ps.psm==='6'?'':(f.white||''))});
+    const {data}=await w.recognize(cut(f.box,ps.scale,ps.t));
+    const raw=(data.text||'').replace(/\s+/g,' ').trim();if(!raw)continue;
+    const r=refine(raw,f.kind);if(!r.text)continue;
+    cand.push({text:r.text,note:r.note,score:(data.confidence||0)+r.bonus,conf:Math.round(data.confidence||0)});
+    if(r.bonus>=30&&(data.confidence||0)>88)break;}
+  await w.setParameters({tessedit_char_whitelist:''});
+  if(!cand.length)return{text:'',conf:null,alt:[],note:'อ่านไม่ออก'};
+  cand.sort((a,b)=>b.score-a.score);
+  return{text:cand[0].text,conf:cand[0].conf,note:cand[0].note,alt:[...new Set(cand.map(c=>c.text))].slice(1,4)};
+}
+const MON_EN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MON_TH=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const D=s=>s.replace(/[OoQD]/g,'0').replace(/[lI|]/g,'1').replace(/[Ss]/g,'5').replace(/[Bb]/g,'8').replace(/[Zz]/g,'2').replace(/[gq]/g,'9');
+function refine(t,kind){
+  t=t.replace(/\s+/g,' ').trim();
+  if(kind==='en'){
+    t=t.replace(/^(Name|Last\s*name|Lastname)[\s:.]*/i,'').replace(/[^A-Za-z.\s-]/g,'').replace(/\s+/g,' ').trim();
+    const ti=t.match(/^(Mr|Mrs|Miss|Ms)\.?\s+/i),body=(ti?t.slice(ti[0].length):t).trim();
+    if(body.length<2)return{text:'',bonus:0,note:''};
+    const nice=body.split(' ').filter(Boolean).map(w=>w[0].toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+    return{text:(ti?ti[1].replace(/\.?$/,'.')+' ':'')+nice,bonus:(body.length>=4?14:0)+(/^[A-Za-z ]+$/.test(body)?8:0),note:''};}
+  if(kind==='th'){
+    t=t.replace(/^(ชื่อ\s*ตัว\s*และ\s*ชื่อ\s*สกุล|ชื่อตัวและชื่อสกุล|ที่\s*อยู่)[\s:]*/,'')
+       .replace(/[^\u0E00-\u0E7F0-9\s./-]/g,'').replace(/\s+/g,' ').trim();
+    return{text:t,bonus:(/[\u0E00-\u0E7F]{3,}/.test(t)?12:0)+(/^(นาย|นาง|นางสาว|น\.ส\.)/.test(t)?10:0),note:''};}
+  if(kind==='date_en'){
+    const m=t.match(/([\dOoIl]{1,2})\s*([A-Za-z]{3,9})\.?\s*,?\s*([\dOoIlSsBb]{4})/);
+    if(!m)return{text:t,bonus:0,note:'ยังไม่เข้ารูปแบบวันที่'};
+    const day=+D(m[1]),mi=nearEn(m[2]),yr=+D(m[3]);
+    if(!day||day>31||mi<0||yr<1900||yr>2200)return{text:t,bonus:0,note:'ค่าผิดช่วง'};
+    return{text:day+' '+MON_EN[mi]+' '+yr,bonus:35,note:'= '+day+' '+MON_TH[mi]+' '+(yr+543)+' (พ.ศ.)'};}
+  if(kind==='date_th'){
+    const m=t.match(/(\d{1,2})\s*([\u0E00-\u0E7F.]{2,7})\s*(\d{4})/);
+    if(!m)return{text:t,bonus:0,note:'ยังไม่เข้ารูปแบบวันที่'};
+    const day=+m[1],mi=nearTh(m[2]),yr=+m[3];
+    if(!day||day>31||mi<0||yr<2400||yr>2700)return{text:t,bonus:0,note:'ค่าผิดช่วง'};
+    return{text:day+' '+MON_TH[mi]+' '+yr,bonus:35,note:'= '+day+' '+MON_EN[mi]+' '+(yr-543)+' (ค.ศ.)'};}
+  if(kind==='id'){
+    const g=D(t).replace(/\D/g,'');
+    if(g.length!==13)return{text:g,bonus:0,note:'ได้ '+g.length+' หลัก (ต้อง 13)'};
+    let s=0;for(let i=0;i<12;i++)s+=+g[i]*(13-i);
+    const ok=((11-s%11)%10)===+g[12];
+    return{text:g[0]+' '+g.slice(1,5)+' '+g.slice(5,10)+' '+g.slice(10,12)+' '+g[12],
+           bonus:ok?60:0,note:ok?'เลขตรวจสอบถูกต้อง':'เลขตรวจสอบไม่ผ่าน'};}
+  return{text:t,bonus:0,note:''};}
+function nearEn(w){w=w.toLowerCase().replace(/[^a-z]/g,'').slice(0,3);
+  const fix={jam:'jan',lan:'jan',jui:'jul',lul:'jul',aus:'aug',ded:'dec',dee:'dec',dea:'dec',oet:'oct',odt:'oct',nou:'nov',sap:'sep',teb:'feb',mai:'mar',ape:'apr'};
+  w=fix[w]||w;let best=-1,bd=9;
+  MON_EN.forEach((m,i)=>{const a=m.toLowerCase();let d=0;for(let j=0;j<3;j++)if(a[j]!==(w[j]||''))d++;if(d<bd){bd=d;best=i;}});
+  return bd<=1?best:-1;}
+function nearTh(w){w=w.replace(/[^\u0E00-\u0E7F]/g,'');let best=-1,bd=9;
+  MON_TH.forEach((m,i)=>{const a=m.replace(/\./g,'');let d=Math.abs(a.length-w.length);
+    for(let j=0;j<Math.min(a.length,w.length);j++)if(a[j]!==w[j])d++;if(d<bd){bd=d;best=i;}});
+  return bd<=1?best:-1;}
+
+/* ---------------- อ่านรูปเดียว / ทั้งโฟลเดอร์ ---------------- */
+$('runOne').onclick=()=>scanCurrent();
+async function scanCurrent(keys){
+  if(busy)return;
+  const ks=keys||FIELDS.filter(f=>F[f.k].on&&F[f.k].box).map(f=>f.k);
+  if(!ks.length){toast('ยังไม่มีกรอบให้อ่าน');return;}
+  busy=true;$('runOne').disabled=true;
+  try{for(const k of ks){const r=await readField(F[k]);Object.assign(F[k],r);renderFields();}toast('อ่านเสร็จ');}
+  catch(e){toast('อ่านไม่สำเร็จ');}finally{busy=false;$('runOne').disabled=false;$('prog').style.display='none';}
+}
+$('stopBatch').onclick=()=>{cancel=true;toast('กำลังหยุด…');};
+$('runBatch').onclick=async()=>{
+  if(busy||!files.length)return;
+  if(typeof Tesseract==='undefined'){toast('โหลดไลบรารี OCR ไม่สำเร็จ');return;}
+  busy=true;batchOn=true;cancel=false;$('runBatch').disabled=true;$('stopBatch').style.display='block';
+  const t0=Date.now();let list=files.slice();
+  if($('optSkip').checked){const seen=new Set(rows.map(r=>r.file));const b=list.length;list=list.filter(f=>!seen.has(f.name));
+    if(b-list.length)toast('ข้าม '+(b-list.length)+' ไฟล์ที่เคยอ่านแล้ว');}
+  const n=list.length,keys=FIELDS.filter(f=>F[f.k].on).map(f=>f.k);let done=0;
+  try{
+    for(let i=0;i<n;i++){
+      if(cancel)break;progBatch(i,n,t0);
+      try{await openImage(list[i]);}catch(e){continue;}
+      const vals={},confs={},notes={};let rev=false;
+      for(const k of keys){
+        if(!F[k].box){vals[k]='';rev=true;continue;}
+        const r=await readField(F[k]);Object.assign(F[k],r);
+        vals[k]=r.text;confs[k]=r.conf;notes[k]=r.note;
+        if(!r.text||(r.conf!=null&&r.conf<75)||/ไม่ผ่าน|ผิด|ไม่ออก|ยังไม่เข้า/.test(r.note||''))rev=true;}
+      renderFields();draw();
+      const row={id:uid(),file:list[i].name,at:new Date().toISOString(),vals,confs,notes,rev,verified:false,extra:{},
+                 thumb:$('optThumb').checked?thumb():null};
+      rows.push(row);await saveRow(row);renderTable();updateN();done++;
+    }
+    progBatch(done,n,t0);
+    toast(cancel?('หยุดแล้ว — อ่านไป '+done+' รูป'):('อ่านครบ '+done+' รูป · บันทึกลงเครื่องแล้ว'));
+  }finally{busy=false;batchOn=false;$('runBatch').disabled=false;$('stopBatch').style.display='none';
+    setTimeout(()=>{$('prog').style.display='none';},2500);}
+};
+function thumb(){
+  const r=cardRect||{x:0,y:0,w:base.width,h:base.height};
+  const W=200,H=Math.max(1,Math.round(r.h*W/r.w));
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  c.getContext('2d').drawImage(base,r.x,r.y,r.w,r.h,0,0,W,H);
+  return c.toDataURL('image/jpeg',.55);}
+$('btnKeep').onclick=async()=>{
+  const vals={},confs={},notes={};let any=false;
+  FIELDS.forEach(f=>{vals[f.k]=F[f.k].text||'';confs[f.k]=F[f.k].conf;notes[f.k]=F[f.k].note;if(F[f.k].text)any=true;});
+  if(!any){toast('ยังไม่มีค่าให้เก็บ');return;}
+  const row={id:uid(),file:curName,at:new Date().toISOString(),vals,confs,notes,rev:false,verified:false,extra:{},
+             thumb:$('optThumb').checked&&base?thumb():null};
+  rows.push(row);await saveRow(row);renderTable();updateN();toast('เก็บลงข้อมูลแล้ว');
+};
+
+/* ---------------- ฟิลด์ในแท็บสแกน ---------------- */
+const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const SRCNAME={saved:'กรอบที่จำไว้',auto:'กรอบอัตโนมัติ',preset:'กรอบมาตรฐาน',manual:'กรอบที่ลากเอง'};
+function renderFields(){
+  $('fields').innerHTML=FIELDS.map(f=>{const s=F[f.k],low=s.conf!=null&&s.conf<75;
+    return '<div class="f'+(s.on?'':' off')+(low?' low':'')+'">'+
+      '<div class="top"><input type="checkbox" data-on="'+f.k+'" '+(s.on?'checked':'')+'>'+
+      '<span class="name">'+esc(f.label)+'</span><span class="k '+(s.srcOf||'')+'">'+(s.box?(SRCNAME[s.srcOf]||'กรอบ'):'ยังไม่มีกรอบ')+'</span>'+
+      '<button class="ghost mini" data-arm="'+f.k+'">กรอบ</button>'+
+      '<button class="ghost mini" data-one="'+f.k+'" '+(s.box?'':'disabled')+'>อ่าน</button></div>'+
+      '<div class="val"><div class="txt" contenteditable="true" spellcheck="false" data-t="'+f.k+'">'+esc(s.text)+'</div>'+
+      (s.conf!=null?'<span class="conf">'+s.conf+'%</span>':'')+'</div>'+
+      (s.note?'<div class="note '+(/ไม่ผ่าน|ผิด|ไม่ออก|ยังไม่เข้า/.test(s.note)?'bad':'ok')+'">'+esc(s.note)+'</div>':'')+
+      (s.alt&&s.alt.length?'<div class="alt">อีกแบบ: '+s.alt.map(a=>'<b data-alt="'+f.k+'">'+esc(a)+'</b>').join(' · ')+'</div>':'')+'</div>';}).join('');
+  $('stat').textContent=(curName?curName+' · ':'')+FIELDS.filter(f=>F[f.k].text).length+' ช่องมีค่า';
+}
+$('fields').addEventListener('click',e=>{
+  const a=e.target.closest('[data-arm]');if(a){setArm(armed===a.dataset.arm?null:a.dataset.arm);return;}
+  const o=e.target.closest('[data-one]');if(o){scanCurrent([o.dataset.one]);return;}
+  const t=e.target.closest('[data-alt]');if(t){F[t.dataset.alt].text=t.textContent;renderFields();}});
+$('fields').addEventListener('change',e=>{const c=e.target.closest('[data-on]');if(c){F[c.dataset.on].on=c.checked;renderFields();draw();}});
+$('fields').addEventListener('input',e=>{const t=e.target.closest('[data-t]');if(t)F[t.dataset.t].text=t.textContent.trim();});
+renderFields();
+
+/* =====================================================================
+   ส่วนจัดการข้อมูล + คอลัมน์ + ส่งออก Excel
+   ===================================================================== */
+const TITLES=['นางสาว','น.ส.','นาย','นาง','ด.ช.','ด.ญ.'];
+function splitTh(s){
+  s=(s||'').trim();if(!s)return{t:'',f:'',l:''};
+  let t='';for(const x of TITLES){if(s.startsWith(x)){t=x;s=s.slice(x.length).trim();break;}}
+  const p=s.split(/\s+/).filter(Boolean);
+  return{t,f:p[0]||'',l:p.slice(1).join(' ')};
+}
+function isoDate(r){
+  const en=r.vals.exp_en||'',m=en.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if(m){const mi=MON_EN.indexOf(m[2]);if(mi>=0)return m[3]+'-'+String(mi+1).padStart(2,'0')+'-'+m[1].padStart(2,'0');}
+  const th=r.vals.exp_th||'',m2=th.match(/^(\d{1,2})\s+(\S+)\s+(\d{4})$/);
+  if(m2){const mi=MON_TH.indexOf(m2[2]);if(mi>=0)return (+m2[3]-543)+'-'+String(mi+1).padStart(2,'0')+'-'+m2[1].padStart(2,'0');}
+  return '';
+}
+const fmtAt=s=>{try{const d=new Date(s);return d.toLocaleDateString('th-TH')+' '+d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}};
+function daysLeft(r){const i=isoDate(r);if(!i)return '';
+  const d=Math.round((new Date(i)-new Date())/86400000);return d;}
+function avgConf(r){const v=Object.values(r.confs||{}).filter(x=>typeof x==='number');
+  return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):'';}
+
+/* คอลัมน์ทั้งหมดที่เลือกได้ — get() คืนค่าที่จะแสดง/ส่งออก, set() = แก้ได้ */
+const COLS=[
+  {id:'no',      name:'ลำดับ',            src:'ระบบ',   get:(r,i)=>i+1},
+  {id:'file',    name:'ชื่อไฟล์',          src:'ระบบ',   get:r=>r.file||''},
+  {id:'at',      name:'วันที่สแกน',        src:'ระบบ',   get:r=>fmtAt(r.at)},
+  {id:'name_th', name:'ชื่อ–สกุล (ไทย)',   src:'บัตร',   get:r=>r.vals.name_th||'', set:(r,v)=>r.vals.name_th=v},
+  {id:'title_th',name:'คำนำหน้า',          src:'แยกจากชื่อไทย', get:r=>splitTh(r.vals.name_th).t},
+  {id:'first_th',name:'ชื่อ (ไทย)',        src:'แยกจากชื่อไทย', get:r=>splitTh(r.vals.name_th).f},
+  {id:'last_th', name:'นามสกุล (ไทย)',     src:'แยกจากชื่อไทย', get:r=>splitTh(r.vals.name_th).l},
+  {id:'name_en', name:'Name',             src:'บัตร',   get:r=>r.vals.name_en||'', set:(r,v)=>r.vals.name_en=v},
+  {id:'last_en', name:'Last name',        src:'บัตร',   get:r=>r.vals.last_en||'', set:(r,v)=>r.vals.last_en=v},
+  {id:'full_en', name:'Full name (EN)',   src:'รวมสองช่อง', get:r=>[(r.vals.name_en||''),(r.vals.last_en||'')].filter(Boolean).join(' ')},
+  {id:'exp_th',  name:'วันหมดอายุ (พ.ศ.)', src:'บัตร',   get:r=>r.vals.exp_th||'', set:(r,v)=>r.vals.exp_th=v},
+  {id:'exp_en',  name:'วันหมดอายุ (EN)',   src:'บัตร',   get:r=>r.vals.exp_en||'', set:(r,v)=>r.vals.exp_en=v},
+  {id:'exp_iso', name:'วันหมดอายุ (YYYY-MM-DD)', src:'แปลงจากวันที่', get:r=>isoDate(r)},
+  {id:'exp_days',name:'เหลืออีก (วัน)',    src:'คำนวณ',  get:r=>daysLeft(r)},
+  {id:'exp_flag',name:'สถานะบัตร',         src:'คำนวณ',  get:r=>{const d=daysLeft(r);return d===''?'':(d<0?'หมดอายุแล้ว':(d<90?'ใกล้หมดอายุ':'ปกติ'));}},
+  {id:'id',      name:'เลขประจำตัว',       src:'บัตร',   get:r=>r.vals.id||'', set:(r,v)=>r.vals.id=v},
+  {id:'id_last4',name:'เลขบัตร 4 หลักท้าย', src:'ตัดจากเลขบัตร', get:r=>{const g=(r.vals.id||'').replace(/\D/g,'');return g?g.slice(-4):'';}},
+  {id:'dob_en',  name:'วันเกิด (EN)',      src:'บัตร',   get:r=>r.vals.dob_en||'', set:(r,v)=>r.vals.dob_en=v},
+  {id:'issue_en',name:'วันออกบัตร (EN)',   src:'บัตร',   get:r=>r.vals.issue_en||'', set:(r,v)=>r.vals.issue_en=v},
+  {id:'addr_th', name:'ที่อยู่',           src:'บัตร',   get:r=>r.vals.addr_th||'', set:(r,v)=>r.vals.addr_th=v},
+  {id:'conf',    name:'ความมั่นใจเฉลี่ย %',src:'ระบบ',   get:r=>avgConf(r)},
+  {id:'status',  name:'สถานะตรวจสอบ',      src:'ระบบ',   get:r=>r.verified?'ตรวจแล้ว':(r.rev?'ควรตรวจ':'—')},
+  {id:'note',    name:'หมายเหตุ',          src:'กรอกเอง', get:r=>r.note||'', set:(r,v)=>r.note=v}
+];
+const CKEY='cardocr:colsets',CLAST='cardocr:colset';
+let colSets=LS.get(CKEY,{}),colState=LS.get('cardocr:colstate',null);
+if(!colState) colState=COLS.map(c=>({id:c.id,name:c.name,on:['no','name_th','name_en','last_en','exp_th','exp_en','exp_days','status'].includes(c.id)}));
+const colDef=id=>COLS.find(c=>c.id===id)||{id,name:id,src:'กรอกเอง',custom:true,
+  get:r=>(r.extra&&r.extra[id])||'',set:(r,v)=>{r.extra=r.extra||{};r.extra[id]=v;}};
+function saveColState(){LS.set('cardocr:colstate',colState);}
+function renderCols(){
+  $('collist').innerHTML=colState.map((c,i)=>{const d=colDef(c.id);
+    return '<div class="col'+(c.on?'':' dim')+'" draggable="true" data-i="'+i+'">'+
+      '<span class="grip">⠿</span>'+
+      '<input type="checkbox" data-con="'+i+'" '+(c.on?'checked':'')+' style="accent-color:var(--go);width:15px;height:15px">'+
+      '<input class="hname" data-cn="'+i+'" value="'+esc(c.name)+'">'+
+      '<span class="src">'+esc(d.src||'')+'</span>'+
+      '<button class="ghost mini" data-cu="'+i+'">↑</button><button class="ghost mini" data-cd="'+i+'">↓</button>'+
+      (d.custom?'<button class="ghost mini" data-cx="'+i+'">ลบ</button>':'')+'</div>';}).join('');
+  const names=Object.keys(colSets).sort();
+  $('csSel').innerHTML='<option value="">— ชุดคอลัมน์ —</option>'+names.map(n=>'<option'+(n===LS.get(CLAST,'')?' selected':'')+'>'+esc(n)+'</option>').join('');
+}
+$('collist').addEventListener('change',e=>{
+  const c=e.target.closest('[data-con]');if(c){colState[+c.dataset.con].on=c.checked;saveColState();renderCols();renderTable();}});
+$('collist').addEventListener('input',e=>{
+  const n=e.target.closest('[data-cn]');if(n){colState[+n.dataset.cn].name=n.value;saveColState();renderTable();}});
+$('collist').addEventListener('click',e=>{
+  const u=e.target.closest('[data-cu]'),d=e.target.closest('[data-cd]'),x=e.target.closest('[data-cx]');
+  if(u){const i=+u.dataset.cu;if(i>0){[colState[i-1],colState[i]]=[colState[i],colState[i-1]];saveColState();renderCols();renderTable();}}
+  if(d){const i=+d.dataset.cd;if(i<colState.length-1){[colState[i+1],colState[i]]=[colState[i],colState[i+1]];saveColState();renderCols();renderTable();}}
+  if(x){colState.splice(+x.dataset.cx,1);saveColState();renderCols();renderTable();}});
+let dragI=null;
+$('collist').addEventListener('dragstart',e=>{const c=e.target.closest('.col');if(!c)return;dragI=+c.dataset.i;c.classList.add('drag');});
+$('collist').addEventListener('dragover',e=>e.preventDefault());
+$('collist').addEventListener('drop',e=>{e.preventDefault();const c=e.target.closest('.col');if(!c||dragI==null)return;
+  const to=+c.dataset.i,it=colState.splice(dragI,1)[0];colState.splice(to,0,it);dragI=null;saveColState();renderCols();renderTable();});
+$('collist').addEventListener('dragend',()=>{dragI=null;renderCols();});
+$('colAdd').onclick=()=>{const n=prompt('ชื่อคอลัมน์ที่จะเพิ่ม (กรอกค่าเองในตาราง) เช่น แผนก, รหัสพนักงาน');
+  if(!n)return;colState.push({id:'x_'+uid(),name:n.trim(),on:true});saveColState();renderCols();renderTable();};
+$('colAll').onclick=()=>{colState.forEach(c=>c.on=true);saveColState();renderCols();renderTable();};
+$('colNone').onclick=()=>{colState.forEach(c=>c.on=false);saveColState();renderCols();renderTable();};
+$('csSave').onclick=()=>{const n=($('csName').value||'').trim();if(!n){toast('ใส่ชื่อชุดก่อน');return;}
+  colSets[n]=JSON.parse(JSON.stringify(colState));LS.set(CKEY,colSets);LS.set(CLAST,n);renderCols();toast('บันทึกชุดคอลัมน์ “'+n+'” แล้ว');};
+$('csDel').onclick=()=>{const n=$('csSel').value;if(!n)return;delete colSets[n];LS.set(CKEY,colSets);renderCols();toast('ลบชุดแล้ว');};
+$('csSel').onchange=e=>{const n=e.target.value;if(!n)return;colState=JSON.parse(JSON.stringify(colSets[n]));
+  LS.set(CLAST,n);$('csName').value=n;saveColState();renderCols();renderTable();toast('ใช้ชุดคอลัมน์ “'+n+'”');};
+
+/* ---------------- ตารางข้อมูล ---------------- */
+let sortBy=null,sortDir=1;
+function view(){
+  const q=($('q').value||'').trim().toLowerCase(),only=$('onlyRev').checked;
+  let v=rows.map((r,i)=>({r,i}));
+  if(only)v=v.filter(x=>x.r.rev&&!x.r.verified);
+  if(q)v=v.filter(x=>{const s=[x.r.file,...Object.values(x.r.vals||{}),...Object.values(x.r.extra||{}),x.r.note||''].join(' ').toLowerCase();
+    return s.includes(q);});
+  if(sortBy){const d=colDef(sortBy);
+    v.sort((a,b)=>{const x=d.get(a.r,a.i),y=d.get(b.r,b.i);
+      return (typeof x==='number'&&typeof y==='number')?(x-y)*sortDir:String(x).localeCompare(String(y),'th')*sortDir;});}
+  return v;
+}
+function renderTable(){
+  const cs=colState.filter(c=>c.on),v=view(),th=$('showThumb').checked;
+  $('dataN').textContent=rows.length+' รายการ · แสดง '+v.length+' · ควรตรวจ '+rows.filter(r=>r.rev&&!r.verified).length;
+  $('tbl').innerHTML='<thead><tr><th style="cursor:default"><input type="checkbox" id="selAll" style="accent-color:var(--go)"></th>'+
+    (th?'<th style="cursor:default">รูป</th>':'')+'<th style="cursor:default">✔</th>'+
+    cs.map(c=>'<th data-sort="'+c.id+'">'+esc(c.name)+(sortBy===c.id?(sortDir>0?' ↑':' ↓'):'')+'</th>').join('')+'</tr></thead><tbody>'+
+    v.map(({r,i})=>'<tr class="'+(r.verified?'done':(r.rev?'rev':''))+'" data-id="'+r.id+'">'+
+      '<td><input type="checkbox" class="sel" data-id="'+r.id+'" '+(r._sel?'checked':'')+' style="accent-color:var(--go)"></td>'+
+      (th?('<td>'+(r.thumb?'<img src="'+r.thumb+'" alt="">':'<span class="n">—</span>')+'</td>'):'')+
+      '<td><input type="checkbox" class="ver" data-id="'+r.id+'" '+(r.verified?'checked':'')+' title="ตรวจแล้ว" style="accent-color:var(--go)"></td>'+
+      cs.map(c=>{const d=colDef(c.id),val=d.get(r,i);
+        return d.set?('<td contenteditable="true" data-id="'+r.id+'" data-col="'+c.id+'">'+esc(val)+'</td>')
+                    :('<td class="'+(typeof val==='number'?'n':'')+'">'+esc(val)+'</td>');}).join('')+
+      '</tr>').join('')+'</tbody>';
+  const sa=$('selAll');if(sa)sa.onchange=e=>{v.forEach(({r})=>r._sel=e.target.checked);renderTable();};
+  $('selInfo').textContent=(rows.filter(r=>r._sel).length||0)+' แถวที่เลือก';
+}
+$('tbl').addEventListener('input',async e=>{
+  const td=e.target.closest('[data-col]');if(!td)return;
+  const r=rows.find(x=>x.id===td.dataset.id);if(!r)return;
+  colDef(td.dataset.col).set(r,td.textContent.trim());await saveRow(r);});
+$('tbl').addEventListener('change',async e=>{
+  const v=e.target.closest('.ver');
+  if(v){const r=rows.find(x=>x.id===v.dataset.id);if(r){r.verified=v.checked;await saveRow(r);renderTable();}return;}
+  const s=e.target.closest('.sel');
+  if(s){const r=rows.find(x=>x.id===s.dataset.id);if(r){r._sel=s.checked;$('selInfo').textContent=rows.filter(x=>x._sel).length+' แถวที่เลือก';}}});
+$('tbl').addEventListener('click',e=>{const h=e.target.closest('[data-sort]');if(!h)return;
+  if(sortBy===h.dataset.sort)sortDir*=-1;else{sortBy=h.dataset.sort;sortDir=1;}renderTable();});
+$('q').oninput=renderTable;$('onlyRev').onchange=renderTable;$('showThumb').onchange=renderTable;
+$('delSel').onclick=async()=>{const sel=rows.filter(r=>r._sel);if(!sel.length){toast('ยังไม่ได้เลือกแถว');return;}
+  if(!confirm('ลบ '+sel.length+' แถวถาวร?'))return;
+  for(const r of sel)await DB.del(r.id);
+  rows=rows.filter(r=>!r._sel);renderTable();updateN();toast('ลบแล้ว');};
+$('clrAll').onclick=async()=>{if(!rows.length)return;
+  if(!confirm('ล้างข้อมูลทั้งหมด '+rows.length+' รายการถาวร?'))return;
+  await DB.clear();rows=[];renderTable();updateN();toast('ล้างข้อมูลแล้ว');};
+function updateN(){$('tabN').textContent=rows.length?'('+rows.length+')':'';
+  $('storeInfo').textContent=(DB.ok?'เก็บใน IndexedDB':'เก็บใน localStorage')+' · '+rows.length+' รายการ';}
+
+/* ---------------- ส่งออก ---------------- */
+function sheetData(){
+  const cs=colState.filter(c=>c.on),v=view();
+  const head=cs.map(c=>c.name);
+  const body=v.map(({r,i})=>cs.map(c=>{const val=colDef(c.id).get(r,i);return val===''?'':val;}));
+  return {head,body,cs};
+}
+$('expXlsx').onclick=()=>{
+  const {head,body,cs}=sheetData();
+  if(!body.length){toast('ไม่มีข้อมูลให้ส่งออก');return;}
+  if(typeof XLSX==='undefined'){toast('โหลดตัวเขียน Excel ไม่ได้ — ใช้ CSV แทนได้');return;}
+  const ws=XLSX.utils.aoa_to_sheet([head,...body]);
+  ws['!cols']=cs.map(c=>({wch:Math.max(10,Math.min(38,c.name.length+6))}));
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:body.length,c:head.length-1}})};
+  ws['!freeze']={xSplit:0,ySplit:1};
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'ข้อมูลบัตร');
+  XLSX.writeFile(wb,'ข้อมูลบัตร-'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast('ส่งออก Excel '+body.length+' แถวแล้ว');
+};
+$('expCsv').onclick=()=>{
+  const {head,body}=sheetData();
+  if(!body.length){toast('ไม่มีข้อมูลให้ส่งออก');return;}
+  const q=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
+  const csv=[head.map(q).join(',')].concat(body.map(r=>r.map(q).join(','))).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));
+  a.download='ข้อมูลบัตร-'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);toast('ส่งออก CSV แล้ว');
+};
+renderCols();renderTable();
+</script>
+</body>
+</html>
