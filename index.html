@@ -459,7 +459,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='5.4';
+window.APP_VER='6.0';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1180,9 +1180,20 @@ if(typeof supabase==='undefined' || !supabase.createClient){
     'เน็ตอาจถูกบล็อก หรือไฟล์ถูกเปิดแบบไม่มีอินเทอร์เน็ต');
   throw new Error('supabase-js not loaded');
 }
+/* token คือหลักฐานตัวตนที่ฐานข้อมูลใช้ตัดสินสิทธิ์ — ไม่มี token = มองไม่เห็นอะไรเลย
+   แนบไปเป็น header x-rtp-token ทุกคำสั่ง เพราะฉะนั้นทุกจุดที่เรียก db.from(...) ได้สิทธิ์อัตโนมัติ */
+var SB_TOKEN=null;
+function sbToken(){ try{ return (JSON.parse(localStorage.getItem('it_sess')||'null')||{}).token||null; }catch(e){ return null; } }
+function mkDb(tok){
+  return supabase.createClient(SB_URL, SB_KEY,
+    tok? {global:{headers:{'x-rtp-token':tok}}} : {});
+}
+/* เปลี่ยน token แล้วต้องสร้าง client ใหม่ ตัวแปร db ถูกอ้างตอนเรียกใช้เสมอ เลยสลับได้ทันที */
+function useToken(tok){ SB_TOKEN=tok||null; db=mkDb(SB_TOKEN); }
 var db;
 try{
-  db = supabase.createClient(SB_URL, SB_KEY);
+  SB_TOKEN = sbToken();
+  db = mkDb(SB_TOKEN);
 }catch(e){
   window.__splashFail('เชื่อมต่อโปรเจกต์ “'+SB_NAME+'” ไม่ได้ — '+(e.message||'ค่าเชื่อมต่อไม่ถูกต้อง')+
     ' · กดปุ่มด้านล่างเพื่อเลือกโปรเจกต์ใหม่');
@@ -1487,10 +1498,12 @@ function canEdit(me, target){ return rank(me) > rank(target); }
 /* ── บัญชีที่เคยเข้าในเครื่องนี้ — แตะเลือกได้ ไม่ต้องพิมพ์รหัสซ้ำ ── */
 function usersGet(){ try{ return JSON.parse(localStorage.getItem('it_users')||'[]'); }catch(e){ return []; } }
 function usersPut(a){ try{ localStorage.setItem('it_users', JSON.stringify(a.slice(0,6))); }catch(e){} }
-function userRemember(staff, pin, keepPin){
+/* เก็บเฉพาะ token ที่เซิร์ฟเวอร์ออกให้ ไม่เก็บ PIN ในเครื่องอีกต่อไป
+   token ถูกเพิกถอนได้จากฝั่งเซิร์ฟเวอร์ (ล้าง PIN / ปิดบัญชี) ต่างจาก PIN ที่ค้างอยู่ตลอด */
+function userRemember(staff, token, keepToken){
   var a=usersGet().filter(function(x){ return x.emp!==staff.emp_code; });
   a.unshift({emp:staff.emp_code, name:staff.name||staff.emp_code, role:staff.role||'staff',
-             pin: keepPin? pin : null, at: Date.now()});
+             tok: keepToken? token : null, at: Date.now()});
   usersPut(a);
 }
 function userForget(emp){ usersPut(usersGet().filter(function(x){ return x.emp!==emp; })); lgRender(); }
@@ -1506,7 +1519,7 @@ function renderUserPicker(){
         '<div class="uacc-av'+(mgr?' mgr':'')+'">'+esc(String(x.name||x.emp).trim().charAt(0).toUpperCase())+'</div>'+
         '<div class="uacc-t"><div class="uacc-n">'+esc(x.name||x.emp)+
           (mgr?'<span class="chip c-purple">'+esc(ROLES[x.role])+'</span>':'')+
-          (x.pin?'<span class="chip c-green">แตะเข้าได้เลย</span>':'')+'</div>'+
+          (x.tok?'<span class="chip c-green">แตะเข้าได้เลย</span>':'')+'</div>'+
           '<div class="uacc-s">'+esc(x.emp)+'</div></div>'+
         '<button class="uacc-x" data-x="'+i+'" title="เอาออกจากรายการ">×</button></div>';
     }).join('')+
@@ -1528,20 +1541,23 @@ async function pickUser(u){
   $('inCode').value=u.emp; lgOk();
   var btn=$('btnNext'); btn.disabled=true; btn.textContent='กำลังเข้าใช้งาน…';
   try{
-    var r=await db.from('it_staff').select('*').eq('emp_code',u.emp).limit(1);
-    if(r.error) throw r.error;
-    if(!r.data || !r.data.length){ userForget(u.emp); throw new Error('ไม่พบบัญชีนี้แล้ว — ผู้จัดการอาจลบออกจากระบบ'); }
-    var st=r.data[0];
-    if(!st.active) throw new Error('บัญชีนี้ถูกปิดใช้งาน ติดต่อผู้จัดการ');
-    LG.staff=st;
-    if(u.pin && String(st.pin)===u.pin){
-      await db.from('it_staff').update({last_login_at:new Date().toISOString()}).eq('id',st.id);
-      userRemember(st, u.pin, true);
-      btn.disabled=false; btn.textContent='ถัดไป';
-      return finishLogin(st, u.pin, true);
+    /* มี token เก่า → ให้เซิร์ฟเวอร์ตัดสินว่ายังใช้ได้ไหม ไม่ตัดสินเองในเครื่อง */
+    if(u.tok){
+      var s=await db.rpc('rtp_session',{p_token:u.tok});
+      if(!s.error && s.data && s.data.staff){
+        btn.disabled=false; btn.textContent='ถัดไป';
+        return finishLogin(s.data.staff, u.tok, true);
+      }
+      userRemember({emp_code:u.emp, name:u.name, role:u.role}, null, false);
+      toast('เซสชันหมดอายุแล้ว ใส่ PIN อีกครั้ง', 3600);
     }
-    if(u.pin){ userRemember(st, null, false); toast('PIN เปลี่ยนไปแล้ว ใส่ PIN ใหม่อีกครั้ง', 3600); }
-    LG.mode = st.pin ? 'login' : 'setpin';
+    var st=await db.rpc('rtp_status',{p_emp:u.emp});
+    if(st.error) throw st.error;
+    var info=st.data||{};
+    if(!info.found){ userForget(u.emp); throw new Error('ไม่พบบัญชีนี้แล้ว — ผู้จัดการอาจลบออกจากระบบ'); }
+    if(!info.active) throw new Error('บัญชีนี้ถูกปิดใช้งาน ติดต่อผู้จัดการ');
+    LG.staff={emp_code:u.emp, name:info.name, has_pin:info.has_pin, active:info.active};
+    LG.mode = info.has_pin ? 'login' : 'setpin';
     lgRender();
   }catch(e){ lgErr(e.message||'เข้าใช้งานไม่สำเร็จ'); }
   btn.disabled=false; btn.textContent='ถัดไป';
@@ -1625,13 +1641,16 @@ $('btnNext').onclick=async function(){
   if(!code) return lgErr('ใส่รหัสพนักงานก่อน');
   btn.disabled=true; var lbl=btn.textContent; btn.textContent='กำลังตรวจสอบ…';
   try{
+    /* PIN ไม่เคยถูกส่งมาเทียบในเครื่องอีกต่อไป — ทุกอย่างตรวจที่ฐานข้อมูล */
+    var keep=function(){ return $('lgRemember') && $('lgRemember').checked; };
     if(LG.mode==='code'){
-      var r=await db.from('it_staff').select('*').eq('emp_code',code).limit(1);
+      var r=await db.rpc('rtp_status',{p_emp:code});
       if(r.error) throw r.error;
-      if(r.data && r.data.length){
-        LG.staff=r.data[0];
-        if(!LG.staff.active) throw new Error('บัญชีนี้ถูกปิดใช้งาน ติดต่อผู้จัดการ');
-        LG.mode = LG.staff.pin ? 'login' : 'setpin';
+      var info=r.data||{};
+      if(info.found){
+        if(!info.active) throw new Error('บัญชีนี้ถูกปิดใช้งาน ติดต่อผู้จัดการ');
+        LG.staff={emp_code:code, name:info.name, has_pin:info.has_pin, active:true};
+        LG.mode = info.has_pin ? 'login' : 'setpin';
       }else{
         LG.staff=null; LG.mode='register';
       }
@@ -1639,28 +1658,25 @@ $('btnNext').onclick=async function(){
     }
     else if(LG.mode==='login'){
       var pin=$('inPin').value.trim();
-      if(String(LG.staff.pin)!==pin) throw new Error('PIN ไม่ถูกต้อง');
-      await db.from('it_staff').update({last_login_at:new Date().toISOString()}).eq('id',LG.staff.id);
-      finishLogin(LG.staff, pin, $('lgRemember') && $('lgRemember').checked);
+      var lr=await db.rpc('rtp_login',{p_emp:code, p_pin:pin});
+      if(lr.error) throw lr.error;
+      finishLogin(lr.data.staff, lr.data.token, keep());
     }
     else if(LG.mode==='setpin'){
       var p1=$('inPin').value.trim(), p2=$('inPin2').value.trim();
       var bad=pinOK(p1,p2); if(bad) throw new Error(bad);
-      var now=new Date().toISOString();
-      var u=await db.from('it_staff').update({pin:p1, first_login_at:now, last_login_at:now}).eq('id',LG.staff.id).select().single();
-      if(u.error) throw u.error;
-      finishLogin(u.data, p1, $('lgRemember') && $('lgRemember').checked);
+      var sr=await db.rpc('rtp_set_pin',{p_emp:code, p_pin:p1});
+      if(sr.error) throw sr.error;
+      finishLogin(sr.data.staff, sr.data.token, keep());
     }
     else if(LG.mode==='register'){
       var nm=$('inName').value.trim(), ph=$('inPhone').value.trim();
       var q1=$('inPin').value.trim(), q2=$('inPin2').value.trim();
       if(!nm) throw new Error('ใส่ชื่อ–สกุลก่อน');
       var bad2=pinOK(q1,q2); if(bad2) throw new Error(bad2);
-      var now2=new Date().toISOString();
-      var ins=await db.from('it_staff').insert({emp_code:code, name:nm, phone:ph||null, pin:q1,
-        active:true, approved:false, role:'staff', first_login_at:now2, last_login_at:now2}).select().single();
-      if(ins.error) throw ins.error;
-      finishLogin(ins.data, q1, $('lgRemember') && $('lgRemember').checked);
+      var rr=await db.rpc('rtp_register',{p_emp:code, p_name:nm, p_phone:ph||null, p_pin:q1});
+      if(rr.error) throw rr.error;
+      finishLogin(rr.data.staff, rr.data.token, keep());
     }
   }catch(e){
     lgErr(e.message||'ทำรายการไม่สำเร็จ — ตรวจอินเทอร์เน็ตแล้วลองใหม่');
@@ -1687,10 +1703,11 @@ function showStaleApp(u){
   hideSplash();
 }
 
-function finishLogin(staff, pin, remember){
+function finishLogin(staff, token, remember){
   S.me=staff;
-  userRemember(staff, pin, !!remember);
-  saveSess({role:'user', emp:staff.emp_code, pin:pin});
+  useToken(token);                                   /* คำสั่งถัดจากนี้ถึงจะมีสิทธิ์ */
+  userRemember(staff, token, !!remember);
+  saveSess({role:'user', emp:staff.emp_code, token:token});
   routeUser(staff);
 }
 function routeUser(u){
@@ -1770,16 +1787,24 @@ async function boot(){
   qShow(); lgRender();
   try{
     var ss=loadSess();
-    if(ss && (ss.role==='user' || ss.role==='staff') && ss.emp){
-      var r=await db.from('it_staff').select('*').eq('emp_code',ss.emp).limit(1);
-      if(r.data && r.data.length && String(r.data[0].pin)===ss.pin && r.data[0].active){
-        routeUser(r.data[0]);
+    if(ss && ss.token){
+      var r=await db.rpc('rtp_session',{p_token:ss.token});
+      if(!r.error && r.data && r.data.staff){
+        S.me=r.data.staff; routeUser(r.data.staff);
+      }else{
+        localStorage.removeItem('it_sess');           /* token หมดอายุหรือถูกเพิกถอน */
       }
     }
   }catch(e){}
   hideSplash();
 }
-function logout(){ localStorage.removeItem('it_sess'); location.reload(); }
+function logout(){
+  var t=sbToken();
+  if(t){ try{ db.rpc('rtp_logout',{p_token:t}); }catch(e){} }   /* ทิ้ง session ฝั่งเซิร์ฟเวอร์ด้วย */
+  var a=usersGet(); for(var i=0;i<a.length;i++) if(a[i].tok===t) a[i].tok=null;
+  usersPut(a);
+  localStorage.removeItem('it_sess'); location.reload();
+}
 /* ล้างรายชื่อบัญชีทั้งหมดในเครื่องนี้ — ใช้ตอนส่งต่อเครื่องให้คนอื่น */
 function forgetAll(){
   if(!confirm('ล้างรายชื่อบัญชีทั้งหมดในเครื่องนี้?\nทุกคนต้องพิมพ์รหัสพนักงานและ PIN ใหม่')) return;
@@ -4031,17 +4056,17 @@ function myAccount(){
     var nm=$('m_name').value.trim(), ph=$('m_ph').value.trim();
     var p0=$('m_p0').value.trim(), p1=$('m_p1').value.trim(), p2=$('m_p2').value.trim();
     if(!nm) return toast('ใส่ชื่อ–สกุลก่อน');
-    var patch={name:nm, phone:ph||null};
-    if(p1 || p2 || p0){
-      if(String(S.me.pin)!==p0) return toast('PIN เดิมไม่ถูกต้อง');
-      var bad=pinOK(p1,p2); if(bad) return toast(bad);
-      patch.pin=p1;
-    }
+    var wantPin = !!(p1 || p2 || p0);
+    if(wantPin){ var bad=pinOK(p1,p2); if(bad) return toast(bad); }
     this.disabled=true;
-    var r=await db.from('it_staff').update(patch).eq('id',S.me.id).select().single();
+    if(wantPin){
+      /* PIN เดิมถูกตรวจที่ฐานข้อมูล ไม่ได้เทียบในเครื่อง · เปลี่ยนแล้วเครื่องอื่นถูกเตะออก */
+      var cp=await db.rpc('rtp_change_pin',{p_token:sbToken(), p_old:p0, p_new:p1});
+      if(cp.error){ toast(cp.error.message||'เปลี่ยน PIN ไม่สำเร็จ',4000); this.disabled=false; return; }
+    }
+    var r=await db.rpc('rtp_save_me',{p_name:nm, p_phone:ph||null});
     if(r.error){ toast('บันทึกไม่สำเร็จ: '+r.error.message,4000); this.disabled=false; return; }
     S.me=r.data;
-    if(patch.pin){ var ss=loadSess()||{}; ss.pin=patch.pin; saveSess(ss); }
     closeSheet(); toast('บันทึกแล้ว');
     if(S.role==='mgr'){ S.mgrName=meName(); $('mgrWho').innerHTML=esc(meName())+' · '+esc(ROLES[S.me.role]||'ผู้จัดการ'); loadMgr(); }
     else loadTeamData();
@@ -4150,7 +4175,7 @@ function renderStaff(){
 
   var pend=list.filter(function(x){ return x.approved===false; });
   var un=list.filter(function(x){ return x.approved!==false && !x.team_id && x.active && !isMgr(x); });
-  var noPin=list.filter(function(x){ return !x.pin; }).length;
+  var noPin=list.filter(function(x){ return !x.has_pin; }).length;
   var mgrs=list.filter(function(x){ return rank(x)>=2; }).length;
   $('staffNote').textContent = list.length+' คน'+(pend.length?(' · 🆕 รออนุมัติ '+pend.length):'')+' · ผู้จัดการขึ้นไป '+mgrs+
     (un.length?(' · รอจัดทีม '+un.length):'')+(noPin?(' · ยังไม่ตั้ง PIN '+noPin):'');
@@ -4187,7 +4212,7 @@ function renderStaff(){
             (x.is_leader?'<span class="chip c-purple">หัวหน้าทีม</span>':'')+
             (x.approved===false?('<span class="chip c-red">'+(rank(x)>0?'⏳ ตั้งตำแหน่งแล้ว รออนุมัติ':'🆕 รอกำหนดตำแหน่ง')+'</span>'):'')+
             (x.active?'':'<span class="chip c-gray">ปิดใช้งาน</span>')+
-            (x.pin?'':'<span class="chip c-orange">ยังไม่ตั้ง PIN</span>')+'</div>'+
+            (x.has_pin?'':'<span class="chip c-orange">ยังไม่ตั้ง PIN</span>')+'</div>'+
           '<div class="brow-s"><span class="tm">'+esc(x.emp_code)+'</span>'+
             (x.phone?'<span>'+esc(x.phone)+'</span>':'')+
             (x.last_login_at?'<span class="tm">เข้าล่าสุด '+fmtDT(x.last_login_at)+'</span>':'<span>ยังไม่เคยเข้าใช้</span>')+'</div>'+
@@ -4218,9 +4243,9 @@ function renderStaff(){
       if(!x.is_leader){
         /* ทีมหนึ่งมีหัวหน้าคนเดียว — ปลดคนเดิมก่อน */
         var old=teamLeader(x.team_id);
-        if(old && old.id!==x.id) await db.from('it_staff').update({is_leader:false}).eq('id',old.id);
+        if(old && old.id!==x.id) await db.rpc('rtp_save_staff',{p_target:old.id, p_patch:{is_leader:false}});
       }
-      await db.from('it_staff').update({is_leader: !x.is_leader}).eq('id',x.id);
+      await db.rpc('rtp_save_staff',{p_target:x.id, p_patch:{is_leader: !x.is_leader}});
       await syncTeamLeader(x.team_id);
       toast('บันทึกแล้ว'); loadMgr();
     };
@@ -4234,7 +4259,7 @@ function renderStaff(){
 }
 
 async function staffPatch(id, patch, quiet){
-  var r=await db.from('it_staff').update(patch).eq('id',id);
+  var r=await db.rpc('rtp_save_staff',{p_target:id, p_patch:patch});
   if(r.error) return toast('บันทึกไม่สำเร็จ: '+r.error.message, 4000);
   toast('บันทึกแล้ว'); if(!quiet) loadMgr();
 }
@@ -4305,11 +4330,11 @@ function staffForm(id){
       '<span>อนุมัติให้เข้าใช้งาน'+(pending?'<div style="font-size:11px;color:var(--text2);font-weight:400">ติ๊กแล้วบันทึก เขาจะเข้าใช้งานได้ทันทีโดยไม่ต้องล็อกอินใหม่</div>':'')+'</span></label>'+
     '<div style="margin-top:16px;padding:11px 13px;background:var(--s1);border:1px solid var(--border);border-radius:11px">'+
       '<div style="font-size:12px;color:var(--text2);line-height:1.6">'+
-        (x.pin? 'ตั้ง PIN แล้ว · เข้าล่าสุด '+ (x.last_login_at?fmtDT(x.last_login_at):'—')
+        (x.has_pin? 'ตั้ง PIN แล้ว · เข้าล่าสุด '+ (x.last_login_at?fmtDT(x.last_login_at):'—')
               : 'ยังไม่เคยตั้ง PIN — ครั้งแรกที่เข้าระบบจะให้ตั้งเอง')+'</div>'+
-      ((x.pin && mayEdit && !isSelf && x.role!=='super')
+      ((x.has_pin && mayEdit && !isSelf && x.role!=='super')
         ? '<button class="btn ghost sm" id="p_reset" style="margin-top:9px">ล้าง PIN (ให้ตั้งใหม่ตอนเข้าครั้งหน้า)</button>'
-        : (x.pin? '<div style="font-size:11.5px;color:var(--text3);margin-top:7px">ล้าง PIN บัญชีนี้ไม่ได้ — เจ้าของบัญชีเปลี่ยนเองที่ปุ่ม “บัญชีของฉัน”</div>':''))+
+        : (x.has_pin? '<div style="font-size:11.5px;color:var(--text3);margin-top:7px">ล้าง PIN บัญชีนี้ไม่ได้ — เจ้าของบัญชีเปลี่ยนเองที่ปุ่ม “บัญชีของฉัน”</div>':''))+
     '</div>',
     mayEdit
       ? ('<div class="row">'+(mayDel?'<button class="btn ghost sm" id="p_del" style="flex:0 0 90px">ลบ</button>':'')+
@@ -4331,11 +4356,12 @@ function staffForm(id){
     if(!p.emp_code) return toast('ต้องมีรหัสพนักงาน');
     if(mayRole && !canGrant(S.me, p.role)) return toast('คุณไม่มีสิทธิ์ตั้งระดับ '+ROLES[p.role]);
     this.disabled=true;
+    p.__rpc=1;
     if(p.is_leader && tid){
       var old=teamLeader(tid);
-      if(old && old.id!==id) await db.from('it_staff').update({is_leader:false}).eq('id',old.id);
+      if(old && old.id!==id) await db.rpc('rtp_save_staff',{p_target:old.id, p_patch:{is_leader:false}});
     }
-    var r=await db.from('it_staff').update(p).eq('id',id);
+    var r=await db.rpc('rtp_save_staff',{p_target:id, p_patch:p});
     if(r.error){ toast(r.error.message||'บันทึกไม่สำเร็จ', 5000); this.disabled=false; return; }
     await syncTeamLeader(x.team_id); await syncTeamLeader(tid);
     closeSheet();
@@ -4344,13 +4370,13 @@ function staffForm(id){
   };
   if($('p_reset')) $('p_reset').onclick=async function(){
     if(!confirm('ล้าง PIN ของ '+(x.name||x.emp_code)+' ?\nครั้งหน้าที่เข้าระบบเขาจะตั้ง PIN ใหม่เอง')) return;
-    var r=await db.from('it_staff').update({pin:null}).eq('id',id);
+    var r=await db.rpc('rtp_reset_pin',{p_target:id});
     if(r.error) return toast(r.error.message||'ล้าง PIN ไม่สำเร็จ', 5000);
     closeSheet(); toast('ล้าง PIN แล้ว'); loadMgr();
   };
   if($('p_del')) $('p_del').onclick=async function(){
     if(!confirm('ลบ '+(x.name||x.emp_code)+' ออกจากระบบ?')) return;
-    var r=await db.from('it_staff').delete().eq('id',id);
+    var r=await db.rpc('rtp_delete_staff',{p_target:id});
     if(r.error) return toast(r.error.message||'ลบไม่สำเร็จ', 5000);
     closeSheet(); toast('ลบแล้ว'); loadMgr();
   };
@@ -4581,7 +4607,7 @@ function teamForm(id){
     sel.onchange=async function(){
       var sid=sel.dataset.mv, to=sel.value||null, who=staffOf(sid);
       var wasLead=who.is_leader;
-      var r=await db.from('it_staff').update({team_id:to, is_leader:false}).eq('id',sid);
+      var r=await db.rpc('rtp_save_staff',{p_target:sid, p_patch:{team_id:to, is_leader:false}});
       if(r.error) return toast('ย้ายทีมไม่สำเร็จ: '+r.error.message,4000);
       await syncTeamLeader(id); await syncTeamLeader(to);
       await loadMgr();
@@ -4602,7 +4628,7 @@ function teamForm(id){
       var pick=$('g_lead').value;
       for(var i=0;i<mem.length;i++){
         var want = (mem[i].id===pick);
-        if(!!mem[i].is_leader !== want) await db.from('it_staff').update({is_leader:want}).eq('id',mem[i].id);
+        if(!!mem[i].is_leader !== want) await db.rpc('rtp_save_staff',{p_target:mem[i].id, p_patch:{is_leader:want}});
       }
       await syncTeamLeader(id);
     }
@@ -4795,7 +4821,23 @@ function csv(name, rows){
 }
 
 /* ───────── realtime ───────── */
+/* หลังเปิด RLS แล้ว Realtime อาจส่งข้อมูลไม่ครบ เพราะมันตัดสินสิทธิ์จาก JWT ไม่ใช่ header ของเรา
+   จึงมีการดึงข้อมูลซ้ำตามเวลาเป็นตัวสำรอง — ทำงานคู่กัน อันไหนมาก่อนก็ได้ */
+var pollT=null;
+function startPoll(){
+  stopPoll();
+  pollT=setInterval(function(){
+    if(document.hidden) return;                 /* พับแท็บไว้ไม่ต้องดึง ประหยัด egress */
+    if(!navigator.onLine) return;
+    bump();
+  }, 25000);
+}
+function stopPoll(){ if(pollT){ clearInterval(pollT); pollT=null; } }
+document.addEventListener('visibilitychange', function(){ if(!document.hidden && S.me) bump(); });
+window.addEventListener('focus', function(){ if(S.me) bump(); });
+
 function subscribe(){
+  startPoll();
   db.channel('it_live')
     .on('postgres_changes',{event:'*',schema:'public',table:'it_reports'}, bump)
     .on('postgres_changes',{event:'*',schema:'public',table:'it_issues'}, function(p){
