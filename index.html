@@ -459,7 +459,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='6.1';
+window.APP_VER='6.2';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -562,9 +562,30 @@ window.APP_VER='6.1';
 
 var LS_LIST='it_sb_list', LS_ACT='it_sb_active';
 
-/* โปรเจกต์เดิมที่มากับไฟล์ — ลบไม่ได้ แต่เปลี่ยนไปใช้ตัวอื่นได้ */
-/* ไม่มีโปรเจกต์ฝังมากับไฟล์แล้ว — ผู้ใช้ต้องตั้งค่าเองครั้งแรก */
-var BUILTIN=null;
+/* ╔══════════════════════════════════════════════════════════════════════╗
+   ║  ★ ตั้งค่าฐานข้อมูลประจำไฟล์ — แก้ตรงนี้จุดเดียว                      ║
+   ║                                                                      ║
+   ║  ใส่ค่าครบแล้ว ทุกคนที่เปิดลิงก์จะเข้าหน้าล็อกอินได้ทันที               ║
+   ║  ไม่ต้องตั้งค่าอะไรเอง · ปล่อย key ว่างไว้ = ให้ผู้ใช้กรอกเองเหมือนเดิม  ║
+   ║                                                                      ║
+   ║  ปลอดภัยที่จะใส่ลงไฟล์สาธารณะ เพราะสิทธิ์จริงถูกบังคับด้วย RLS         ║
+   ║  ที่ฝั่งฐานข้อมูล ไม่ใช่ที่ตัวคีย์ (ดู security_v2.sql)                  ║
+   ║                                                                      ║
+   ║  วิธีเอาค่ามาใส่แบบไม่ต้องพิมพ์:                                       ║
+   ║  เปิดแอปในเครื่องที่ตั้งค่าไว้แล้ว → ปุ่ม 🗄 ฐานข้อมูล                  ║
+   ║  → “📋 คัดลอกโค้ดสำหรับฝังลงไฟล์” → วางทับบล็อกนี้                   ║
+   ╚══════════════════════════════════════════════════════════════════════╝ */
+var SB_DEFAULT = {
+  name:   'ฐานข้อมูลหลัก',
+  url:    'https://gbxzgznwxzpqktndvjkf.supabase.co',
+  key:    '',                    /* ← วาง publishable key ตรงนี้ */
+  bucket: 'install-photos'
+};
+
+var BUILTIN = (SB_DEFAULT.url && SB_DEFAULT.key)
+  ? {id:'default', builtin:true, name:SB_DEFAULT.name||'ฐานข้อมูลหลัก',
+     url:SB_DEFAULT.url, key:SB_DEFAULT.key, bucket:SB_DEFAULT.bucket||'install-photos'}
+  : null;
 
 /* ตารางที่แอปต้องใช้ — แบ่งเป็นจำเป็นกับเสริม (เสริมไม่มีก็ยังใช้งานได้ แต่ฟีเจอร์บางส่วนหาย) */
 var CORE=['it_staff','it_teams','it_sites','it_assignments','it_reports','it_issues','it_issue_comments'];
@@ -576,11 +597,11 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
 function customs(){ var a=rd(LS_LIST,[]); return Array.isArray(a)? a.filter(function(x){ return x&&x.url&&x.key; }) : []; }
-function allCfg(){ return customs(); }
+function allCfg(){ return (BUILTIN? [BUILTIN] : []).concat(customs()); }
 function activeCfg(){
   var id=rd(LS_ACT,''), a=allCfg();
   for(var i=0;i<a.length;i++) if(a[i].id===id) return a[i];
-  return a[0]||null;   /* ยังไม่ได้ตั้งค่า = null */
+  return a[0]||null;   /* ไม่มีค่าประจำไฟล์และยังไม่เคยตั้งค่า = null */
 }
 function host(u){ return String(u||'').replace(/^https?:\/\//,'').replace(/\/+$/,''); }
 
@@ -688,6 +709,11 @@ function open(v){
 }
 function close(){ if(M) M.classList.remove('on'); }
 window.openSbPicker=function(){ open('list'); };
+/* เรียกตอนต่อฐานข้อมูลไม่ติด — คืนทางเข้าหน้าตั้งค่าให้ผู้ใช้แก้เองได้ */
+window.revealDbLink=function(){
+  var row=document.getElementById('lgDb');
+  if(row) row.style.display='block';
+};
 window.openSbAdd=function(){ draft={id:'', name:'', url:'', key:'', bucket:'install-photos'}; open('form'); };
 
 function render(){
@@ -716,6 +742,7 @@ function viewList(){
     items+
     '<button class="sb-btn'+(empty?'':' ghost')+' sm" data-add style="margin-top:6px">＋ เพิ่มโปรเจกต์ใหม่</button>'+
     (act? '<button class="sb-btn ghost sm" data-test="'+esc(act.id)+'" style="margin-top:8px">🔌 ทดสอบโปรเจกต์ที่ใช้อยู่</button>' : '')+
+    (act? '<button class="sb-btn ghost sm" data-embed style="margin-top:8px">📋 คัดลอกโค้ดสำหรับฝังลงไฟล์</button>' : '')+
     (results? resBox() : '')+
     '<div style="font-size:10.5px;color:#aeaeb2;line-height:1.6;margin-top:12px">'+
       'ใส่ได้เฉพาะคีย์แบบสาธารณะ (publishable / anon) เท่านั้น · โปรเจกต์ใหม่ต้องมีตาราง it_* และเปิดสิทธิ์ให้ role anon ก่อน ไม่งั้นจะเข้าใช้ไม่ได้'+
@@ -823,6 +850,28 @@ function wire(b){
     };
   });
 
+  var emb=b.querySelector('[data-embed]');
+  if(emb) emb.onclick=function(){
+    var c=activeCfg(); if(!c) return;
+    /* โค้ดชุดนี้เอาไปวางทับบล็อก SB_DEFAULT ในไฟล์ แล้วทุกคนเปิดลิงก์เข้าล็อกอินได้เลย */
+    var code='var SB_DEFAULT = {\n'+
+      "  name:   '"+String(c.name||'ฐานข้อมูลหลัก').replace(/'/g,"\\'")+"',\n"+
+      "  url:    '"+c.url+"',\n"+
+      "  key:    '"+c.key+"',\n"+
+      "  bucket: '"+(c.bucket||'install-photos')+"'\n};";
+    var done=function(ok){
+      msg={t: ok?'ok':'warn', h: ok
+        ? 'คัดลอกแล้ว — เปิดไฟล์ index.html หาบล็อก <b>var SB_DEFAULT</b> แล้ววางทับ จากนั้นอัปขึ้นเซิร์ฟเวอร์'
+        : 'คัดลอกอัตโนมัติไม่ได้ — เลือกข้อความด้านล่างแล้วก๊อปเอง<br><textarea readonly style="width:100%;margin-top:7px;font-family:Menlo,monospace;font-size:10.5px;height:96px;border-radius:8px;border:1px solid rgba(0,0,0,.15);padding:7px">'+esc(code)+'</textarea>'};
+      render();
+    };
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(code).then(function(){ done(true); },function(){ done(false); });
+      }else done(false);
+    }catch(e){ done(false); }
+  };
+
   var run=b.querySelector('[data-run]');
   if(run) run.onclick=function(){
     var c=readForm();
@@ -908,6 +957,10 @@ function bindButtons(){
   var c=activeCfg();
   var lbl=document.getElementById('lgDbName');
   if(lbl) lbl.textContent = c? host(c.url) : 'ยังไม่ได้ตั้งค่า';
+  /* ไฟล์มีค่าประจำและไม่มีโปรเจกต์อื่น = ช่างไม่ต้องเห็นเรื่องฐานข้อมูลเลย
+     ถ้าต่อไม่ติดเมื่อไหร่ แถบนี้จะโผล่เองอัตโนมัติ (ดู revealDbLink) */
+  var row=document.getElementById('lgDb');
+  if(row) row.style.display = (BUILTIN && !customs().length) ? 'none' : 'block';
   var lbl2=document.getElementById('sbNowName');
   if(lbl2) lbl2.textContent = c? (c.name||host(c.url)) : 'ยังไม่ได้ตั้งค่า';
 }
@@ -918,7 +971,7 @@ window.sbBindButtons=bindButtons;
 
 /* เปิดหน้าตั้งค่าทันทีด้วย #db — ทางหนีตายเวลาแอปเปิดไม่ขึ้นเพราะต่อฐานข้อมูลไม่ได้ */
 if(location.hash==='#db'){ setTimeout(function(){ open('list'); }, 100); }
-/* ยังไม่เคยตั้งค่าฐานข้อมูล = เปิดหน้าตั้งค่าให้เลย ไม่ต้องให้ไปหาปุ่มเอง */
+/* เด้งหน้าตั้งค่าเฉพาะตอนที่ไม่มีอะไรให้ใช้จริง ๆ — ถ้าไฟล์มีค่าประจำอยู่แล้วก็เข้าล็อกอินเลย */
 if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
 })();
 </script>
@@ -1565,6 +1618,8 @@ async function pickUser(u){
 
 function lgErr(m){
   m=String(m||'');
+  if(/failed to fetch|networkerror|load failed|schema cache|does not exist|could not find|api key|JWT/i.test(m)
+     && window.revealDbLink) window.revealDbLink();
   /* TypeError: Failed to fetch = ต่อเซิร์ฟเวอร์ไม่ติดเลย ซึ่งเกือบทุกครั้งคือ URL ผิด */
   if(/failed to fetch|networkerror|load failed/i.test(m)){
     m = /supabase\.com/i.test(SB_URL)
