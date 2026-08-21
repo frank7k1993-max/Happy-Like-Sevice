@@ -459,7 +459,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='6.0';
+window.APP_VER='6.1';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1570,10 +1570,17 @@ function lgErr(m){
     m = /supabase\.com/i.test(SB_URL)
       ? 'Project URL ผิด — ใส่ลิงก์หน้า Dashboard มา ต้องเป็น https://xxxxx.supabase.co · แตะ “ฐานข้อมูล” ด้านล่างเพื่อแก้'
       : 'ต่อฐานข้อมูลไม่ได้ — เช็ก URL/คีย์ หรือโปรเจกต์อาจถูกพักอยู่ · แตะ “ฐานข้อมูล” ด้านล่างเพื่อตรวจ';
-  }else if(/does not exist|not find the table|schema cache/i.test(m)){
-    m = 'ยังไม่มีตาราง it_* ในโปรเจกต์นี้ — รันไฟล์ SQL ติดตั้งใน Supabase → SQL Editor ก่อน';
-  }else if(/JWT|api key|Invalid|401|403/i.test(m)){
-    m = 'คีย์ไม่ถูกต้อง หรือ RLS ไม่อนุญาต role anon — ตรวจที่ปุ่ม “ฐานข้อมูล” ด้านล่าง';
+  }else if(/crypt|gen_salt/i.test(m)){
+    /* เจอบ่อยที่สุด: Supabase เก็บ pgcrypto ไว้ที่ schema extensions ไม่ใช่ public */
+    m = 'ฐานข้อมูลหา crypt() ไม่เจอ — รันไฟล์ security_v2.sql เวอร์ชันล่าสุดซ้ำอีกครั้ง (ตัวเก่ามีปัญหาเรื่อง search_path)';
+  }else if(/could not find the function|rtp_/i.test(m)){
+    m = 'ยังไม่ได้ติดตั้งระบบความปลอดภัย — รันไฟล์ security_v2.sql ใน Supabase → SQL Editor ก่อน';
+  }else if(/could not find the table|relation .* does not exist|PGRST205/i.test(m)){
+    m = 'ยังไม่มีตาราง it_* ในโปรเจกต์นี้ — รันไฟล์ install_realtimeplan.sql ก่อน';
+  }else if(/schema cache/i.test(m)){
+    m = 'ฐานข้อมูลเพิ่งถูกแก้ไข แต่ Supabase ยังไม่รีเฟรช — รอสักครู่แล้วลองใหม่ หรือรัน  notify pgrst, \'reload schema\';  ใน SQL Editor';
+  }else if(/JWT|api key|401|403/i.test(m)){
+    m = 'คีย์ไม่ถูกต้อง — ตรวจที่ปุ่ม “ฐานข้อมูล” ด้านล่าง';
   }
   $('lgErr').textContent=m; $('lgErr').classList.remove('hide');
 }
@@ -1603,8 +1610,10 @@ function lgRender(){
       '<label class="lg-rem"><input type="checkbox" id="lgRemember" checked> จดจำบัญชีนี้ในเครื่อง — ครั้งหน้าแตะรูปเข้าได้เลย</label>'+backLink;
     b.textContent='เข้าใช้งาน';
     h.innerHTML='เข้าใช้ในชื่อ <b style="color:var(--text)">'+esc(LG.staff.name||LG.staff.emp_code)+'</b>'+
-      (isMgr(LG.staff)? (' · <span style="color:var(--accent);font-weight:600">'+ROLES[LG.staff.role]+'</span>')
-                      : (LG.staff.team_id?'':' · ยังไม่ได้เข้าทีม'));
+      (LG.staff.role
+        ? (isMgr(LG.staff)? (' · <span style="color:var(--accent);font-weight:600">'+ROLES[LG.staff.role]+'</span>')
+                          : (LG.staff.team_id?'':' · ยังไม่ได้เข้าทีม'))
+        : '');   /* ก่อนใส่ PIN ระบบยังไม่บอกสิทธิ์ของบัญชี — กันคนสุ่มรหัสหาว่าใครเป็นผู้จัดการ */
   }
   else if(LG.mode==='setpin'){
     d.innerHTML='<div class="fld"><label>ตั้ง PIN (4–6 หลัก)</label><input id="inPin" type="tel" inputmode="numeric" maxlength="6" placeholder="••••"></div>'+
