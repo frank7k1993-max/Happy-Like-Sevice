@@ -459,7 +459,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='5.3';
+window.APP_VER='5.4';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -563,13 +563,8 @@ window.APP_VER='5.3';
 var LS_LIST='it_sb_list', LS_ACT='it_sb_active';
 
 /* โปรเจกต์เดิมที่มากับไฟล์ — ลบไม่ได้ แต่เปลี่ยนไปใช้ตัวอื่นได้ */
-var BUILTIN={
-  id:'default', builtin:true,
-  name:'โปรเจกต์เริ่มต้น (ที่มากับไฟล์)',
-  url:'https://vyzsdfezmzawctfkehbk.supabase.co',
-  key:'sb_publishable__2Ci0D7Gf4dg__BdmHJz3A_KHnvQykx',
-  bucket:'install-photos'
-};
+/* ไม่มีโปรเจกต์ฝังมากับไฟล์แล้ว — ผู้ใช้ต้องตั้งค่าเองครั้งแรก */
+var BUILTIN=null;
 
 /* ตารางที่แอปต้องใช้ — แบ่งเป็นจำเป็นกับเสริม (เสริมไม่มีก็ยังใช้งานได้ แต่ฟีเจอร์บางส่วนหาย) */
 var CORE=['it_staff','it_teams','it_sites','it_assignments','it_reports','it_issues','it_issue_comments'];
@@ -581,11 +576,11 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
 function customs(){ var a=rd(LS_LIST,[]); return Array.isArray(a)? a.filter(function(x){ return x&&x.url&&x.key; }) : []; }
-function allCfg(){ return [BUILTIN].concat(customs()); }
+function allCfg(){ return customs(); }
 function activeCfg(){
-  var id=rd(LS_ACT,'default'), a=allCfg();
+  var id=rd(LS_ACT,''), a=allCfg();
   for(var i=0;i<a.length;i++) if(a[i].id===id) return a[i];
-  return BUILTIN;
+  return a[0]||null;   /* ยังไม่ได้ตั้งค่า = null */
 }
 function host(u){ return String(u||'').replace(/^https?:\/\//,'').replace(/\/+$/,''); }
 
@@ -593,6 +588,10 @@ function host(u){ return String(u||'').replace(/^https?:\/\//,'').replace(/\/+$/
 function normUrl(v){
   v=String(v||'').trim().replace(/\s/g,'');
   if(!v) return '';
+  /* คนมักก๊อปลิงก์หน้า Dashboard มาแทน API URL — ดึง project ref ออกมาให้เอง
+     https://supabase.com/dashboard/project/abcd1234/... → https://abcd1234.supabase.co */
+  var m=v.match(/supabase\.(?:com|co)\/(?:dashboard\/)?project\/([a-z0-9]{16,})/i);
+  if(m) return 'https://'+m[1]+'.supabase.co';
   v=v.replace(/\/(rest|storage|auth|realtime)\/v1.*$/,'');
   v=v.replace(/\/+$/,'');
   if(/^[a-z0-9]{16,}$/i.test(v)) return 'https://'+v+'.supabase.co';
@@ -614,7 +613,7 @@ function keyRisk(k){
 }
 
 /* ── เปิดเผยให้สคริปต์หลักใช้ ── */
-window.SBCFG=activeCfg();
+window.SBCFG=activeCfg();   /* null ได้ ถ้ายังไม่เคยตั้งค่า */
 window.SB_ALL=allCfg;
 
 /* ═════ ทดสอบการเชื่อมต่อด้วย fetch ตรง ไม่ต้องรอไลบรารี supabase-js ═════ */
@@ -634,7 +633,17 @@ async function probeTable(cfg, t){
     if(r.status===404 || /does not exist|not find the table/i.test(m)) m='ยังไม่มีตารางนี้ในโปรเจกต์';
     else if(r.status===401||r.status===403) m='คีย์ไม่ถูกต้อง หรือ RLS ไม่อนุญาต role anon';
     return {ok:false, msg:m};
-  }catch(e){ return {ok:false, msg:'ต่อไม่ได้ — '+(e.message||'network error')}; }
+  }catch(e){ return {ok:false, msg:fetchErr(e, cfg)}; }
+}
+/* แปล TypeError: Failed to fetch ให้เป็นสาเหตุที่คนแก้ต่อได้ */
+function fetchErr(e, cfg){
+  var m=String((e&&e.message)||e||'');
+  if(/failed to fetch|networkerror|load failed/i.test(m)){
+    if(/supabase\.com/i.test(cfg.url))
+      return 'URL นี้ไม่ใช่ API URL — ต้องเป็น https://xxxxx.supabase.co ไม่ใช่ลิงก์หน้า Dashboard';
+    return 'ติดต่อเซิร์ฟเวอร์ไม่ได้ — เช็ก URL สะกดถูกไหม โปรเจกต์ถูกพักอยู่หรือเปล่า หรืออินเทอร์เน็ตหลุด';
+  }
+  return 'ต่อไม่ได้ — '+m;
 }
 async function probeBucket(cfg){
   try{
@@ -648,7 +657,7 @@ async function probeBucket(cfg){
     var m=j.message||j.error||('HTTP '+r.status);
     if(/not found|does not exist/i.test(m)) m='ยังไม่มี bucket ชื่อนี้';
     return {ok:false, msg:m};
-  }catch(e){ return {ok:false, msg:'ต่อไม่ได้ — '+(e.message||'network error')}; }
+  }catch(e){ return {ok:false, msg:fetchErr(e, cfg)}; }
 }
 async function testAll(cfg, onStep){
   var out=[], i;
@@ -688,24 +697,25 @@ function render(){
 }
 
 function viewList(){
-  var a=allCfg(), act=activeCfg();
+  var a=allCfg(), act=activeCfg(), actId=act?act.id:'';
   var items=a.map(function(c){
-    return '<div class="sb-item'+(c.id===act.id?' on':'')+'" data-go="'+esc(c.id)+'">'+
+    return '<div class="sb-item'+(c.id===actId?' on':'')+'" data-go="'+esc(c.id)+'">'+
       '<div class="sb-dot"></div>'+
       '<div class="sb-txt"><div class="sb-n">'+esc(c.name||'(ไม่มีชื่อ)')+
-        (c.id===act.id?'<span class="sb-tag">กำลังใช้</span>':'')+'</div>'+
+        (c.id===actId?'<span class="sb-tag">กำลังใช้</span>':'')+'</div>'+
         '<div class="sb-u">'+esc(host(c.url))+' · bucket: '+esc(c.bucket||'—')+'</div></div>'+
-      (c.builtin? '' :
-        '<button class="sb-ic" data-edit="'+esc(c.id)+'" title="แก้ไข">✏️</button>'+
-        '<button class="sb-ic" data-del="'+esc(c.id)+'" title="ลบ">🗑</button>')+
+      '<button class="sb-ic" data-edit="'+esc(c.id)+'" title="แก้ไข">✏️</button>'+
+      '<button class="sb-ic" data-del="'+esc(c.id)+'" title="ลบ">🗑</button>'+
     '</div>';
   }).join('');
-  return '<div class="sbc-h"><h2>🗄 โปรเจกต์ฐานข้อมูล</h2><button class="x" data-close>×</button></div>'+
+  var empty = !a.length;
+  return '<div class="sbc-h"><h2>🗄 โปรเจกต์ฐานข้อมูล</h2>'+(empty?'':'<button class="x" data-close>×</button>')+'</div>'+
     '<div class="sb-sub">เลือกว่าจะให้แอปนี้อ่าน-เขียนข้อมูลกับ Supabase โปรเจกต์ไหน · ข้อมูลทั้งหมด (ทีม ไซต์ งาน รูป) อยู่ในโปรเจกต์ที่เลือกเท่านั้น</div>'+
     (msg? '<div class="sb-'+msg.t+'">'+msg.h+'</div>' : '')+
+    (empty? '<div class="sb-warn">ยังไม่ได้ตั้งค่าฐานข้อมูล — กด “เพิ่มโปรเจกต์ใหม่” แล้วใส่ Project URL กับ publishable key จาก Supabase ก่อนถึงจะเข้าใช้งานได้</div>' : '')+
     items+
-    '<button class="sb-btn ghost sm" data-add style="margin-top:6px">＋ เพิ่มโปรเจกต์ใหม่</button>'+
-    '<button class="sb-btn ghost sm" data-test="'+esc(act.id)+'" style="margin-top:8px">🔌 ทดสอบโปรเจกต์ที่ใช้อยู่</button>'+
+    '<button class="sb-btn'+(empty?'':' ghost')+' sm" data-add style="margin-top:6px">＋ เพิ่มโปรเจกต์ใหม่</button>'+
+    (act? '<button class="sb-btn ghost sm" data-test="'+esc(act.id)+'" style="margin-top:8px">🔌 ทดสอบโปรเจกต์ที่ใช้อยู่</button>' : '')+
     (results? resBox() : '')+
     '<div style="font-size:10.5px;color:#aeaeb2;line-height:1.6;margin-top:12px">'+
       'ใส่ได้เฉพาะคีย์แบบสาธารณะ (publishable / anon) เท่านั้น · โปรเจกต์ใหม่ต้องมีตาราง it_* และเปิดสิทธิ์ให้ role anon ก่อน ไม่งั้นจะเข้าใช้ไม่ได้'+
@@ -760,7 +770,13 @@ function readForm(){
 function validate(c){
   if(!c.url) return 'ใส่ Project URL ก่อน';
   if(!/^https:\/\/[^\s]+\.[^\s]+$/i.test(c.url)) return 'Project URL ไม่ถูกรูปแบบ — ต้องขึ้นต้นด้วย https://';
+  if(/supabase\.com\/dashboard/i.test(c.url))
+    return 'นี่คือลิงก์หน้า Dashboard ไม่ใช่ API URL — ต้องเป็น https://xxxxx.supabase.co';
   if(!c.key) return 'ใส่ publishable / anon key ก่อน';
+  /* คีย์ที่ก๊อปมาผิดมักมีช่องว่างคั่นแทนขีดล่าง ทำให้ต่อไม่ติดโดยไม่บอกสาเหตุ */
+  if(/\s/.test(c.key)) return 'คีย์มีช่องว่างอยู่ — ก๊อปใหม่จาก Supabase ให้ครบทั้งบรรทัด (ปกติคั่นด้วย _ ไม่ใช่เว้นวรรค)';
+  if(!/^(sb_publishable_|eyJ)/.test(c.key))
+    return 'คีย์ไม่ถูกรูปแบบ — ต้องขึ้นต้นด้วย sb_publishable_ หรือ eyJ';
   var risk=keyRisk(c.key);
   if(risk) return risk;
   return '';
@@ -794,8 +810,14 @@ function wire(b){
       var a=allCfg(), nm=id;
       for(var i=0;i<a.length;i++) if(a[i].id===id) nm=a[i].name||id;
       if(!confirm('ลบโปรเจกต์ “'+nm+'” ออกจากรายการ?\n\nข้อมูลใน Supabase ไม่ถูกลบ — ลบแค่ทางลัดในเครื่องนี้')) return;
+      var wasActive = (rd(LS_ACT,'')===id);
       wr(LS_LIST, customs().filter(function(x){ return x.id!==id; }));
-      if(rd(LS_ACT,'default')===id){ wr(LS_ACT,'default'); }
+      if(wasActive){
+        var left=customs();
+        wr(LS_ACT, left.length? left[0].id : '');
+        try{ localStorage.removeItem('it_sess'); localStorage.removeItem('it_users'); }catch(e){}
+        location.reload(); return;
+      }
       msg={t:'ok', h:'ลบออกจากรายการแล้ว'};
       render();
     };
@@ -804,9 +826,10 @@ function wire(b){
   var run=b.querySelector('[data-run]');
   if(run) run.onclick=function(){
     var c=readForm();
+    draft=c;                       /* เก็บสิ่งที่พิมพ์ไว้ก่อนเสมอ ไม่งั้นพอขึ้น error แล้วช่องจะโดนล้าง */
     var err=validate(c);
     if(err){ msg={t:'err', h:esc(err)}; render(); return; }
-    draft=c; msg=null;
+    msg=null;
     runTest(c);
   };
   b.querySelectorAll('[data-test]').forEach(function(el){
@@ -829,6 +852,7 @@ async function runTest(c){
 
 function saveDraft(){
   var c=readForm();
+  draft=c;                         /* เช่นเดียวกัน — กันช่องโดนล้างตอนขึ้น error */
   var err=validate(c);
   if(err){ msg={t:'err', h:esc(err)}; render(); return; }
   var list=customs();
@@ -847,7 +871,7 @@ function saveDraft(){
 
 /* สลับโปรเจกต์ = ล้างการล็อกอินเดิมทิ้ง เพราะบัญชีผูกกับฐานข้อมูลเดิม ไม่ใช่เครื่องนี้ */
 function switchTo(id, quiet){
-  var cur=rd(LS_ACT,'default');
+  var cur=rd(LS_ACT,'');
   if(id===cur){ if(!quiet){ close(); } return; }
   var a=allCfg(), t=null;
   for(var i=0;i<a.length;i++) if(a[i].id===id) t=a[i];
@@ -881,10 +905,11 @@ function bindButtons(){
   document.querySelectorAll('[data-sbpick]').forEach(function(el){
     if(!el.__sbBound){ el.__sbBound=true; el.onclick=function(e){ e.preventDefault(); open('list'); }; }
   });
+  var c=activeCfg();
   var lbl=document.getElementById('lgDbName');
-  if(lbl) lbl.textContent=host(activeCfg().url);
+  if(lbl) lbl.textContent = c? host(c.url) : 'ยังไม่ได้ตั้งค่า';
   var lbl2=document.getElementById('sbNowName');
-  if(lbl2) lbl2.textContent=activeCfg().name||host(activeCfg().url);
+  if(lbl2) lbl2.textContent = c? (c.name||host(c.url)) : 'ยังไม่ได้ตั้งค่า';
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', bindButtons);
 else bindButtons();
@@ -893,6 +918,8 @@ window.sbBindButtons=bindButtons;
 
 /* เปิดหน้าตั้งค่าทันทีด้วย #db — ทางหนีตายเวลาแอปเปิดไม่ขึ้นเพราะต่อฐานข้อมูลไม่ได้ */
 if(location.hash==='#db'){ setTimeout(function(){ open('list'); }, 100); }
+/* ยังไม่เคยตั้งค่าฐานข้อมูล = เปิดหน้าตั้งค่าให้เลย ไม่ต้องให้ไปหาปุ่มเอง */
+if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
 })();
 </script>
 
@@ -1136,12 +1163,17 @@ if(location.hash==='#db'){ setTimeout(function(){ open('list'); }, 100); }
    Real-Time Plan — ติดตามทีมติดตั้ง-QA หลายทีม หลายหน้างาน (เวอร์ชันอยู่ที่ window.APP_VER)
    ใช้ Supabase project เดียวกับ production_v2.html (ตาราง it_*)
    ===================================================================== */
-/* ค่าเชื่อมต่อมาจากตัวเลือกโปรเจกต์ด้านบน (window.SBCFG) — เปลี่ยนได้จากในแอป ไม่ต้องแก้ไฟล์ */
-var SB_CFG  = window.SBCFG || {};
-var SB_URL  = SB_CFG.url    || 'https://vyzsdfezmzawctfkehbk.supabase.co';
-var SB_KEY  = SB_CFG.key    || 'sb_publishable__2Ci0D7Gf4dg__BdmHJz3A_KHnvQykx';
+/* ค่าเชื่อมต่อมาจากตัวเลือกโปรเจกต์ด้านบน (window.SBCFG) — ไม่มีค่าฝังไว้ในไฟล์แล้ว
+   ถ้ายังไม่ได้ตั้งค่า หน้าตั้งค่าจะเด้งขึ้นมาเองและสคริปต์นี้จะหยุดตรงนี้ */
+var SB_CFG  = window.SBCFG;
+if(!SB_CFG || !SB_CFG.url || !SB_CFG.key){
+  window.__splashFail('ยังไม่ได้ตั้งค่าฐานข้อมูล — ใส่ Project URL และ publishable key ของ Supabase ก่อน');
+  throw new Error('supabase not configured');
+}
+var SB_URL  = SB_CFG.url;
+var SB_KEY  = SB_CFG.key;
 var BUCKET  = SB_CFG.bucket || 'install-photos';
-var SB_NAME = SB_CFG.name   || 'โปรเจกต์เริ่มต้น';
+var SB_NAME = SB_CFG.name   || SB_URL.replace('https://','');
 var CHECKIN_RADIUS = 300;   // เมตร — เกินนี้เตือนว่าอยู่ไกลไซต์
 if(typeof supabase==='undefined' || !supabase.createClient){
   window.__splashFail('โหลดไลบรารี Supabase ไม่ได้ (cdn.jsdelivr.net) — '+
@@ -1515,7 +1547,20 @@ async function pickUser(u){
   btn.disabled=false; btn.textContent='ถัดไป';
 }
 
-function lgErr(m){ $('lgErr').textContent=m; $('lgErr').classList.remove('hide'); }
+function lgErr(m){
+  m=String(m||'');
+  /* TypeError: Failed to fetch = ต่อเซิร์ฟเวอร์ไม่ติดเลย ซึ่งเกือบทุกครั้งคือ URL ผิด */
+  if(/failed to fetch|networkerror|load failed/i.test(m)){
+    m = /supabase\.com/i.test(SB_URL)
+      ? 'Project URL ผิด — ใส่ลิงก์หน้า Dashboard มา ต้องเป็น https://xxxxx.supabase.co · แตะ “ฐานข้อมูล” ด้านล่างเพื่อแก้'
+      : 'ต่อฐานข้อมูลไม่ได้ — เช็ก URL/คีย์ หรือโปรเจกต์อาจถูกพักอยู่ · แตะ “ฐานข้อมูล” ด้านล่างเพื่อตรวจ';
+  }else if(/does not exist|not find the table|schema cache/i.test(m)){
+    m = 'ยังไม่มีตาราง it_* ในโปรเจกต์นี้ — รันไฟล์ SQL ติดตั้งใน Supabase → SQL Editor ก่อน';
+  }else if(/JWT|api key|Invalid|401|403/i.test(m)){
+    m = 'คีย์ไม่ถูกต้อง หรือ RLS ไม่อนุญาต role anon — ตรวจที่ปุ่ม “ฐานข้อมูล” ด้านล่าง';
+  }
+  $('lgErr').textContent=m; $('lgErr').classList.remove('hide');
+}
 function lgOk(){ $('lgErr').classList.add('hide'); }
 
 /* ── ล็อกอินด้วยรหัสพนักงาน: ยังไม่มีในระบบ = ลงทะเบียน · มีแล้วแต่ยังไม่ตั้ง PIN = ตั้งรหัส ── */
