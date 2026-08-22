@@ -459,7 +459,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='6.2';
+window.APP_VER='6.3';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1542,8 +1542,11 @@ function canGrant(me, role){
   if(r>=4) return true;
   return RANK[role] < r;
 }
-/* แก้ไข/ลบบัญชีคนอื่นได้เฉพาะคนที่สิทธิ์ต่ำกว่าตัวเอง */
-function canEdit(me, target){ return rank(me) > rank(target); }
+/* แก้ไข/ลบบัญชีคนอื่นได้เฉพาะคนที่สิทธิ์ต่ำกว่าตัวเอง
+   ยกเว้นผู้ควบคุมระบบ (rank 4) ที่ดูแลกันเองได้ ไม่งั้นถ้าตั้ง super ไว้สองคน
+   แล้วลืมอนุมัติ จะไม่มีใครในระบบแก้ให้ได้เลย ต้องไปงัดที่ฐานข้อมูล
+   กฎนี้ตรงกับฝั่ง SQL (rtp_save_staff) — ห้ามแก้ให้ต่างกัน */
+function canEdit(me, target){ return rank(me)>=4 ? true : rank(me) > rank(target); }
 
 /* ═════════════════════════════════════════════════════════
    LOGIN
@@ -4333,7 +4336,7 @@ function staffForm(id){
   var isSelf = S.me && id===S.me.id;
   var mayEdit = isSelf ? true : canEdit(S.me, x);
   var mayRole = mayEdit && !isSelf && rank(S.me)>=2;      /* แก้สิทธิ์ตัวเองไม่ได้เด็ดขาด */
-  var mayDel  = mayEdit && !isSelf && !x.protected && x.role!=='super';
+  var mayDel  = mayEdit && !isSelf && !x.protected && (x.role!=='super' || isSuper(S.me));
 
   /* สิทธิ์ที่ตัวเรามอบให้คนนี้ได้ + สิทธิ์ปัจจุบันของเขา (ไว้แสดงเฉย ๆ) */
   var opts=Object.keys(ROLES).filter(function(k){ return canGrant(S.me,k) || k===(x.role||'staff'); });
@@ -4353,7 +4356,7 @@ function staffForm(id){
       'padding:11px 13px;margin-bottom:14px;font-size:12.5px;line-height:1.65;color:var(--purple)">'+
       '🔒 <b>บัญชีนี้สิทธิ์สูงกว่าหรือเท่ากับคุณ</b><br>'+
       'คุณเป็น '+esc(ROLES[S.me.role]||'')+' แก้ไขหรือลบบัญชี '+esc(ROLES[x.role]||'')+' ไม่ได้'+
-      (x.role==='super'? ' — บัญชีผู้ควบคุมระบบแก้ได้จากฐานข้อมูลเท่านั้น':'')+'</div>';
+      (x.role==='super'? ' — ต้องให้ผู้ควบคุมระบบอีกคนเป็นคนแก้':'')+'</div>';
   }else if(isSelf){
     notice='<div style="background:var(--accent-glow);border:1px solid rgba(0,122,255,.22);border-radius:11px;'+
       'padding:11px 13px;margin-bottom:14px;font-size:12.5px;line-height:1.65;color:var(--accent)">'+
@@ -4387,7 +4390,7 @@ function staffForm(id){
     '<label style="font-size:13.5px;display:flex;align-items:center;gap:9px;margin-bottom:8px">'+
       '<input type="checkbox" id="p_lead"'+(x.is_leader?' checked':'')+dis+'> เป็นหัวหน้าทีม</label>'+
     '<label style="font-size:13.5px;display:flex;align-items:center;gap:9px;margin-bottom:8px">'+
-      '<input type="checkbox" id="p_act"'+(x.active!==false?' checked':'')+((mayEdit&&!isSelf&&x.role!=='super')?'':' disabled')+'> เปิดใช้งานบัญชีนี้</label>'+
+      '<input type="checkbox" id="p_act"'+(x.active!==false?' checked':'')+((mayEdit&&!isSelf&&(x.role!=='super'||isSuper(S.me)))?'':' disabled')+'> เปิดใช้งานบัญชีนี้</label>'+
     '<label style="font-size:13.5px;display:flex;align-items:center;gap:9px;'+
       (pending?'background:var(--green-dim);border:1px solid rgba(52,199,89,.3);border-radius:10px;padding:10px 12px':'')+'">'+
       '<input type="checkbox" id="p_ok"'+(x.approved!==false?' checked':'')+((mayEdit&&!isSelf)?'':' disabled')+'> '+
@@ -4396,7 +4399,7 @@ function staffForm(id){
       '<div style="font-size:12px;color:var(--text2);line-height:1.6">'+
         (x.has_pin? 'ตั้ง PIN แล้ว · เข้าล่าสุด '+ (x.last_login_at?fmtDT(x.last_login_at):'—')
               : 'ยังไม่เคยตั้ง PIN — ครั้งแรกที่เข้าระบบจะให้ตั้งเอง')+'</div>'+
-      ((x.has_pin && mayEdit && !isSelf && x.role!=='super')
+      ((x.has_pin && mayEdit && !isSelf && (x.role!=='super' || isSuper(S.me)))
         ? '<button class="btn ghost sm" id="p_reset" style="margin-top:9px">ล้าง PIN (ให้ตั้งใหม่ตอนเข้าครั้งหน้า)</button>'
         : (x.has_pin? '<div style="font-size:11.5px;color:var(--text3);margin-top:7px">ล้าง PIN บัญชีนี้ไม่ได้ — เจ้าของบัญชีเปลี่ยนเองที่ปุ่ม “บัญชีของฉัน”</div>':''))+
     '</div>',
@@ -4413,14 +4416,13 @@ function staffForm(id){
       phone:$('p_ph').value.trim()||null, team_id:tid, is_leader: tid? $('p_lead').checked : false,
       role: mayRole? $('p_role').value : x.role,
       approved: (isSelf? true : $('p_ok').checked),
-      active: (isSelf||x.role==='super')? true : $('p_act').checked};
+      active: (isSelf || (x.role==='super' && !isSuper(S.me)))? true : $('p_act').checked};
     if(p.approved && p.role==='staff' && !tid && !confirm('อนุมัติเป็นพนักงานหน้างานแต่ยังไม่ได้จัดเข้าทีม\nเขาจะเห็นหน้า “รอจัดเข้าทีม” ต่อ — ยืนยันหรือไม่?')) return;
     if(!p.approved && RANK[p.role]>=1 && !confirm('ตั้งเป็น'+(ROLES[p.role]||'')+'แล้ว แต่ยังไม่ได้ติ๊ก “อนุมัติให้เข้าใช้งาน”\n\n'+
       'เขาจะยังเข้า Dashboard ไม่ได้ ค้างอยู่ที่หน้ารอ\nบันทึกแบบนี้หรือไม่?')) return;
     if(!p.emp_code) return toast('ต้องมีรหัสพนักงาน');
     if(mayRole && !canGrant(S.me, p.role)) return toast('คุณไม่มีสิทธิ์ตั้งระดับ '+ROLES[p.role]);
     this.disabled=true;
-    p.__rpc=1;
     if(p.is_leader && tid){
       var old=teamLeader(tid);
       if(old && old.id!==id) await db.rpc('rtp_save_staff',{p_target:old.id, p_patch:{is_leader:false}});
