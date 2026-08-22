@@ -459,8 +459,6 @@ body.preview #previewBar{display:flex}
 .brow.dragging{opacity:.45}
 .brow[data-tid].dropok{background:rgba(0,122,255,.1);box-shadow:inset 0 0 0 2px var(--accent)}
 .mt-hint{font-size:11px;color:var(--text3);padding:7px 13px 0;line-height:1.55}
-.mt-grab{cursor:grab}
-.mt-grab:active{cursor:grabbing}
 #splash{position:fixed;inset:0;z-index:99999;background:#fff;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   transition:opacity .5s ease;padding:20px}
@@ -501,7 +499,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='7.7';
+window.APP_VER='7.8';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1185,7 +1183,7 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
       <div class="card">
         <!-- ★ ชื่อหัวข้อ — แก้คำในแท็ก <span> ด้านล่างได้ตามต้องการ -->
         <div class="card-h"><span>ทีมงาน</span><button class="tb-btn" id="btnAddTeam">+ เพิ่มทีม</button></div>
-        <div class="mt-hint" id="mtHint">ลากชื่อจากช่องพนักงานมาวางที่ทีม เพื่อจัดคนเข้าทีมได้เลย</div>
+        <div class="mt-hint" id="mtHint">ทีมไม่มีสมาชิกประจำ — จัดคนและตั้งหัวหน้าชุดเป็นรายวันที่หน้า “แผนงาน”</div>
         <div id="teamList" style="max-height:60vh;overflow:auto"></div>
       </div>
       <div class="card">
@@ -2223,7 +2221,7 @@ function renderBoard(){
     var iss=S.issues.filter(function(i){ return i.site_id===a.site_id && i.status!=='closed' && i.status!=='resolved'; }).length;
     return '<div class="brow" data-id="'+a.id+'">'+
       '<div class="brow-t"><span class="nm">'+esc(s.name||'—')+'</span><span class="chip '+st.c+'">'+st.l+'</span></div>'+
-      '<div class="brow-s"><span>'+esc(t.name||'—')+'</span><span>·</span><span>'+esc(leadInfo(t).name||'ยังไม่มีหัวหน้าทีม')+'</span>'+
+      '<div class="brow-s"><span>'+esc(t.name||'—')+'</span><span>·</span><span>'+esc(leadInfo(t).name||'ยังไม่ตั้งหัวหน้าชุด')+'</span>'+
         (a.checkin_at?'<span class="tm">เข้า '+fmtT(a.checkin_at)+'</span>':'')+
         (!geoOn()? '' : (a.checkin_road_m!=null
           ? '<span class="chip '+distTone(a.checkin_road_m)+'">🚗 '+(a.checkin_road_m/1000).toFixed(1)+' กม.</span>'
@@ -3281,7 +3279,7 @@ function printCrew(list){
       '<div style="font-size:11.5px;color:#555;margin-top:3px">Happy Like Service · รวม '+total+' คน · '+list.length+' งาน</div></div>'+
       '<div class="meta">พิมพ์เมื่อ '+fmtDT(new Date().toISOString())+'<br>โดย '+esc(meName())+'</div></div>'+
     rows+
-    '<div class="sign"><div>ผู้จัดทำ</div><div>หัวหน้าทีม</div><div>ผู้อนุมัติ</div></div>'+
+    '<div class="sign"><div>ผู้จัดทำ</div><div>หัวหน้าชุด</div><div>ผู้อนุมัติ</div></div>'+
     '<div class="no" style="margin-top:18px"><button onclick="window.print()" style="padding:9px 18px;font-size:13px;cursor:pointer">🖨 สั่งพิมพ์</button></div>'+
     '</body></html>');
   w.document.close();
@@ -3527,7 +3525,7 @@ function exportSchedule(){
   /* แผ่นที่ 1 — ตารางแบบเดียวกับที่เห็นบนจอ */
   var grid=teams.map(function(t){
     var L=leadInfo(t);
-    var row={ทีม:t.code+' '+t.name, หัวหน้าทีม:L.name||'', เบอร์โทร:L.phone||''};
+    var row={ทีม:t.code+' '+t.name};
     days.forEach(function(x){
       var dt=new Date(x+'T00:00:00');
       var key=DW_TH[dt.getDay()]+' '+dt.getDate()+' '+MO_TH[dt.getMonth()];
@@ -3547,7 +3545,8 @@ function exportSchedule(){
         var ck=Array.isArray(a.checklist)?a.checklist:[];
         flat.push({
           วันที่:x, วัน:DW_TH[new Date(x+'T00:00:00').getDay()],
-          รหัสทีม:t.code, ทีม:t.name, หัวหน้าทีม:L.name||'',
+          รหัสทีม:t.code, ทีม:t.name,
+          หัวหน้าชุด:(function(){ var lj=leadOfJob(a); return lj? fullName(lj) : ''; })(),
           รหัสงาน:si.code||'', ไซต์งาน:si.name||'', หมวดไซต์:si.category||'', ลูกค้า:si.customer||'',
           ที่อยู่:si.address||'', ขอบเขตงาน:a.scope||'',
           สถานะ:st.l, คืบหน้า:pct(a.progress)+'%',
@@ -3900,10 +3899,11 @@ async function openAsg(id){
       '<dt>ลูกค้า</dt><dd>'+esc(s.customer||'—')+'</dd>'+
       '<dt>ที่อยู่</dt><dd>'+esc(s.address||'—')+'</dd>'+
       '<dt>ผู้ติดต่อ</dt><dd>'+esc(s.contact||'—')+'</dd>'+
-      '<dt>หัวหน้าทีม</dt><dd>'+(function(){ var L=leadInfo(t);
+      '<dt>หัวหน้าชุดวันนี้</dt><dd>'+(function(){ var lj=leadOfJob(a);
+        var L=lj? {name:fullName(lj), phone:lj.phone||''} : leadInfo(t, a.work_date);
         return L.name? (esc(L.name)+(L.emp?' <span style="color:var(--text3);font-family:var(--mono);font-size:11px">'+esc(L.emp)+'</span>':'')+
           (L.phone?' · <a href="tel:'+esc(L.phone)+'">'+esc(L.phone)+'</a>':''))
-          : '<span style="color:var(--orange)">ยังไม่ได้ตั้งหัวหน้าทีม</span>'; })()+'</dd>'+
+          : '<span style="color:var(--orange)">ยังไม่ได้ตั้งหัวหน้าชุด</span>'; })()+'</dd>'+
       '<dt>ขอบเขต</dt><dd>'+esc(a.scope||'—')+'</dd>'+
       (function(){
         var other=busyElsewhere(a.team_id, a.work_date, a.site_id);
@@ -3935,7 +3935,7 @@ async function openAsg(id){
           (p.note?'<div class="cmt-b">'+esc(p.note)+'</div>':'')+photoStrip(p.photos)+'</div>';
       }).join('') : '<div class="empty" style="padding:22px">ยังไม่มีรายงานส่งเข้ามา</div>')+
     '</div>';
-  $('dwFoot').innerHTML='<div class="row" style="margin-bottom:7px"><button class="btn ghost sm" id="dwCall">โทรหาหัวหน้าทีม</button>'+
+  $('dwFoot').innerHTML='<div class="row" style="margin-bottom:7px"><button class="btn ghost sm" id="dwCall">โทรหาหัวหน้าชุด</button>'+
     '<button class="btn sm" id="dwGo">เปิดแผนที่นำทาง</button></div>'+
     '<button class="btn ghost sm" id="dwEdit" style="width:100%">🗓 เปลี่ยนแผน · เลื่อนวัน · ย้ายทีม · ลบงาน</button>';
   $('dwEdit').onclick=function(){ asgActions(a); };
@@ -3975,8 +3975,9 @@ async function openAsg(id){
         'เน็ตองค์กรอาจบล็อก router.project-osrm.org หรือจุดนั้นไม่มีถนนเชื่อมถึง</span>';
     }
   };
-  $('dwCall').onclick=function(){ var ph=leadInfo(t).phone;
-    if(ph) location.href='tel:'+ph; else toast('หัวหน้าทีมยังไม่ได้ใส่เบอร์โทร'); };
+  $('dwCall').onclick=function(){
+    var lj=leadOfJob(a); var ph=lj? (lj.phone||'') : leadInfo(t, a.work_date).phone;
+    if(ph) location.href='tel:'+ph; else toast('หัวหน้าชุดวันนี้ยังไม่ได้ตั้ง หรือยังไม่ใส่เบอร์โทร'); };
   $('dwGo').onclick=function(){ if(s.lat!=null) window.open('https://www.google.com/maps/search/?api=1&query='+s.lat+','+s.lng,'_blank');
     else toast('ไซต์นี้ยังไม่ได้ใส่พิกัด'); };
 }
@@ -4330,9 +4331,9 @@ var HELP_DASH=[
     'คนใหม่ลงทะเบียนเองด้วยรหัสพนักงาน ชื่อจะโผล่บนสุดพร้อมป้ายแดง “รอกำหนดตำแหน่ง” และตัวเลขบนแท็บ',
     'กดปุ่ม “✅ กำหนดตำแหน่ง” เลือกสิทธิ์ จัดทีม แล้วติ๊กอนุมัติ — ก่อนอนุมัติเขาใช้งานอะไรไม่ได้เลย',
     'พออนุมัติแล้วหน้าจอฝั่งเขาเปลี่ยนเองทันที ไม่ต้องบอกให้ล็อกอินใหม่',
-    'จัดคนเข้าทีมด้วย dropdown ในแถว ตั้งหัวหน้าทีมด้วยปุ่มดาว (ทีมหนึ่งมีหัวหน้าคนเดียว)',
+    'ทีมไม่มีสมาชิกประจำ — จัดคนและตั้งหัวหน้าชุดเป็นรายวันที่หน้าแผนงาน',
     'ย้ายคนหลายคนพร้อมกันได้ในฟอร์มแก้ไขทีม มีรายชื่อสมาชิกพร้อม dropdown ย้ายทุกคน',
-    'ถ้าหัวหน้าทีมถูกย้ายออก ระบบปลดตำแหน่งให้และเตือนว่าทีมนั้นไม่มีหัวหน้าแล้ว'
+    'หน้านี้ใช้ดูรายชื่อ ตั้งสิทธิ์ อนุมัติคนใหม่ และล้าง PIN ให้คนที่ลืม'
   ]},
   {k:'rp', i:'📤', t:'รายงาน / Export', b:[
     'เลือกช่วงวันแล้วกดสรุปข้อมูล ได้สรุปรายทีม: งานที่ได้รับ ปิดได้ ไม่เช็คอินกี่ครั้ง ปัญหากี่เรื่อง',
@@ -4892,33 +4893,18 @@ function renderPlan(){
     return '<div class="brow" data-tid="'+t.id+'"><div class="brow-t"><span class="nm">'+esc(t.name)+'</span>'+
       '<span class="chip '+(t.active?'c-green':'c-gray')+'">'+(t.active?'ใช้งาน':'ปิด')+'</span></div>'+
       '<div class="brow-s"><span class="tm">'+esc(t.code)+'</span>'+
-      (function(){ var mem=teamStaff(t.id), ld=teamLeader(t.id);
-        return '<span>'+(ld? ('หัวหน้า: '+esc(ld.name||ld.emp_code)) : '<span style="color:var(--orange)">ยังไม่มีหัวหน้าทีม</span>')+'</span>'+
-               '<span class="chip c-gray">'+mem.length+' คน</span>'; })()+
+      (function(){
+        /* ทีมไม่มีสมาชิกประจำและไม่มีหัวหน้าประจำแล้ว — บอกปริมาณงานแทนจะมีประโยชน์กว่า */
+        var t0=todayISO();
+        var soon=(S.plan||[]).filter(function(a){ return a.team_id===t.id && a.work_date>=t0; }).length;
+        var ld=leadOn(t.id, t0);
+        return '<span>'+(ld? ('หัวหน้าชุดวันนี้: '+esc(fullName(ld)))
+                            : '<span style="color:var(--text3)">จัดคนรายวันที่หน้าแผนงาน</span>')+'</span>'+
+               '<span class="chip '+(soon?'c-blue':'c-gray')+'">'+(soon? ('งานข้างหน้า '+soon) : 'ยังไม่มีงาน')+'</span>'; })()+
       '</div></div>';
   }).join('') : '<div class="empty"><b>ยังไม่มีทีม</b>กด “เพิ่มทีม” เพื่อเริ่ม</div>';
   $('teamList').querySelectorAll('[data-tid]').forEach(function(r){
     r.onclick=function(){ teamForm(r.dataset.tid); };
-    /* จุดวางสำหรับลากชื่อพนักงานมาใส่ทีม */
-    r.ondragover=function(e){
-      if(!DRAG_STAFF) return;
-      e.preventDefault(); e.dataTransfer.dropEffect='move'; r.classList.add('dropok');
-    };
-    r.ondragleave=function(){ r.classList.remove('dropok'); };
-    r.ondrop=async function(e){
-      r.classList.remove('dropok');
-      if(!DRAG_STAFF) return;
-      e.preventDefault(); e.stopPropagation();
-      var sid=DRAG_STAFF, tid=r.dataset.tid; DRAG_STAFF=null;
-      var who=staffOf(sid);
-      if(who.team_id===tid) return;
-      var from=who.team_id;
-      var res=await db.rpc('rtp_save_staff',{p_target:sid, p_patch:{team_id:tid, is_leader:false}});
-      if(res.error) return toast('ย้ายทีมไม่สำเร็จ: '+res.error.message, 4500);
-      await syncTeamLeader(from); await syncTeamLeader(tid);
-      await loadMgr();
-      toast(fullName(who)+' → '+(teamOf(tid).name||''), 3000);
-    };
   });
 
   (function(){
@@ -4947,27 +4933,50 @@ function teamStaff(tid){
   });
 }
 function teamLeader(tid){ return teamStaff(tid).filter(function(x){return x.is_leader;})[0]||null; }
-/* ชื่อ/เบอร์หัวหน้าทีมที่ใช้แสดงทุกที่ — เอาจากรายชื่อพนักงานก่อน ค่าเก่าใน it_teams เป็นแค่ตัวสำรอง */
-function leadInfo(t){
-  if(!t) return {name:'', phone:'', emp:''};
-  var ld = t.id? teamLeader(t.id) : null;
-  if(ld) return {name: ld.name||ld.emp_code, phone: ld.phone||'', emp: ld.emp_code||''};
-  return {name: t.leader_name||'', phone: t.phone||'', emp:''};
+/* ── หัวหน้าชุดของ "งานนั้น วันนั้น" — ไม่มีหัวหน้าทีมประจำอีกแล้ว ──
+   ตั้งจากดาว ★ ในหน้าจัดทีมย่อยของแต่ละวัน คนละวันเป็นคนละคนได้ */
+function leadOfJob(a){
+  if(!a) return null;
+  var r=crewRows(a).filter(function(c){ return c.is_lead; })[0];
+  if(!r) return null;
+  var s=staffOf(r.staff_id);
+  return s.id? s : null;
 }
-/* เขียนชื่อหัวหน้ากลับลง it_teams ให้ตรงกันเสมอ — รายงาน/Export เก่าจะได้ไม่เพี้ยน */
-async function syncTeamLeader(teamId){
-  if(!teamId) return;
-  try{
-    var r=await db.from('it_staff').select('name,phone,emp_code').eq('team_id',teamId).eq('is_leader',true).eq('active',true).limit(1);
-    var ld = r.data && r.data[0];
-    await db.from('it_teams').update({
-      leader_name: ld? (ld.name||ld.emp_code) : null,
-      phone: ld? (ld.phone||null) : null
-    }).eq('id',teamId);
-  }catch(e){}
+function jobsOfTeamOn(teamId, date){
+  var src=(S.plan&&S.plan.length? S.plan : (S.asgs||[]));
+  return src.filter(function(a){ return a.team_id===teamId && a.work_date===date; });
+}
+function leadOn(teamId, date){
+  var js=jobsOfTeamOn(teamId, date);
+  for(var i=0;i<js.length;i++){ var l=leadOfJob(js[i]); if(l) return l; }
+  return null;
+}
+/* คนที่ไปกับทีมนี้ในวันนั้นจริง ๆ */
+function crewOn(teamId, date){
+  var out=[], seen={};
+  jobsOfTeamOn(teamId, date).forEach(function(a){
+    crewRows(a).forEach(function(c){
+      if(seen[c.staff_id]) return; seen[c.staff_id]=1;
+      var s=staffOf(c.staff_id);
+      if(s.id) out.push({s:s, lead:!!c.is_lead, duty:(dutyOf(c.duty_id)||{}).label||'', sub:c.subteam_id});
+    });
+  });
+  return out.sort(function(x,y){ return (y.lead?1:0)-(x.lead?1:0) ||
+    String(x.s.emp_code).localeCompare(String(y.s.emp_code)); });
 }
 
-var DRAG_STAFF=null;
+/* ชื่อ/เบอร์หัวหน้าที่ใช้แสดง — เอาจากหัวหน้าชุดของวันที่กำลังดูอยู่
+   ไม่มี "หัวหน้าทีมประจำ" แล้ว ค่าเก่าใน it_teams เก็บไว้เป็นตัวสำรองของข้อมูลเดิมเท่านั้น */
+function leadInfo(t, date){
+  if(!t) return {name:'', phone:'', emp:''};
+  var ld = t.id? leadOn(t.id, date || S.date || todayISO()) : null;
+  if(ld) return {name: fullName(ld)||ld.emp_code, phone: ld.phone||'', emp: ld.emp_code||''};
+  return {name:'', phone:'', emp:''};
+}
+/* เดิมเขียนชื่อหัวหน้าประจำกลับลง it_teams — ไม่ใช้แล้วเพราะหัวหน้าเป็นรายวัน
+   คงฟังก์ชันไว้ให้จุดที่ยังเรียกอยู่ไม่พัง แต่ไม่ทำอะไร */
+async function syncTeamLeader(){ return; }
+
 var MT_Q='';
 function renderStaff(){
   /* ซ่อนบัญชีผู้ควบคุมระบบจากรายชื่อ — เห็นได้เฉพาะผู้ควบคุมระบบด้วยกันเอง */
@@ -4984,7 +4993,7 @@ function renderStaff(){
   }
 
   var pend=all.filter(function(x){ return x.approved===false; });
-  var un=all.filter(function(x){ return x.approved!==false && !x.team_id && x.active && !isMgr(x); });
+  var un=[];   /* ไม่มีสถานะ "รอจัดทีม" แล้ว เพราะจัดคนเป็นรายวันที่แผนงาน */
   var noPin=all.filter(function(x){ return !x.has_pin; }).length;
   var mgrs=all.filter(function(x){ return rank(x)>=2; }).length;
   $('staffNote').textContent = (MT_Q? (list.length+' / '+all.length+' คน') : (all.length+' คน'))+
@@ -5005,25 +5014,23 @@ function renderStaff(){
     var pa=a.approved===false?0:1, pb=b.approved===false?0:1;
     if(pa!==pb) return pa-pb;                                    /* คนรออนุมัติขึ้นบนสุด */
     if(rank(a)!==rank(b)) return rank(b)-rank(a);                /* สิทธิ์สูงขึ้นบนสุด */
-    if(!a.team_id !== !b.team_id) return a.team_id? 1 : -1;      /* รอจัดทีมขึ้นก่อน */
+
     return (a.team_id||'').localeCompare(b.team_id||'') || String(a.emp_code).localeCompare(String(b.emp_code));
   });
   $('staffList').innerHTML = order.map(function(x){
     var may = (S.me && x.id===S.me.id)? false : canEdit(S.me, x);
-    var opts='<option value="">— ยังไม่เข้าทีม —</option>'+S.teams.map(function(t){
-      return '<option value="'+t.id+'"'+(x.team_id===t.id?' selected':'')+'>'+esc(t.code+' · '+t.name)+'</option>'; }).join('');
-    return '<div class="brow'+(may?' mt-grab':'')+'" data-sid="'+x.id+'"'+(may?' draggable="true"':'')+
-      ' style="cursor:'+(may?'grab':'default')+
+
+    return '<div class="brow" data-sid="'+x.id+'" style="cursor:default'+
       (x.approved===false?';background:rgba(255,59,48,.07)'
         :(rank(x)>=4?';background:rgba(88,86,214,.13)'
         :(rank(x)>=3?';background:rgba(88,86,214,.07)'
-                 :(isMgr(x)?';background:rgba(0,122,255,.05)':(x.team_id||!x.active?'':';background:rgba(255,149,0,.08)')))))+'">'+
+                 :(isMgr(x)?';background:rgba(0,122,255,.05)':''))))+'">'+
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
         '<div style="flex:1;min-width:170px">'+
           '<div class="brow-t"><span class="nm">'+esc(fullName(x)||'(ยังไม่ใส่ชื่อ)')+'</span>'+
             (isMgr(x)?'<span class="chip '+(rank(x)>=3?'c-purple':(rank(x)===2?'c-blue':'c-gray'))+'">'+
               (rank(x)>=4?'⭐ ':(rank(x)===3?'👑 ':''))+esc(ROLES[x.role])+'</span>':'')+
-            (x.is_leader?'<span class="chip c-purple">หัวหน้าทีม</span>':'')+
+
             (x.approved===false?('<span class="chip c-red">'+(rank(x)>0?'⏳ ตั้งตำแหน่งแล้ว รออนุมัติ':'🆕 รอกำหนดตำแหน่ง')+'</span>'):'')+
             (x.active?'':'<span class="chip c-gray">ปิดใช้งาน</span>')+
             (x.has_pin?'':'<span class="chip c-orange">ยังไม่ตั้ง PIN</span>')+'</div>'+
@@ -5031,52 +5038,13 @@ function renderStaff(){
             (x.phone?'<span>'+esc(x.phone)+'</span>':'')+
             (x.last_login_at?'<span class="tm">เข้าล่าสุด '+fmtDT(x.last_login_at)+'</span>':'<span>ยังไม่เคยเข้าใช้</span>')+'</div>'+
         '</div>'+
-        '<select class="tin" data-team="'+x.id+'" style="min-width:180px"'+(may?'':' disabled')+'>'+opts+'</select>'+
-        '<button class="tb-btn" data-lead="'+x.id+'"'+((x.team_id&&may)?'':' disabled style="opacity:.4"')+'>'+
-          (x.is_leader?'★ หัวหน้า':'☆ ตั้งหัวหน้า')+'</button>'+
+        /* ไม่มีทีมประจำและหัวหน้าประจำแล้ว — ทั้งสองอย่างตั้งรายวันที่หน้าแผนงาน */
         ((x.approved===false && may)? '<button class="tb-btn" data-sok="'+x.id+'" '+
           'style="background:var(--accent);border-color:var(--accent);color:#fff">✅ กำหนดตำแหน่ง</button>' : '')+
         '<button class="tb-btn" data-sedit="'+x.id+'">'+(may?'แก้ไข':'ดู')+'</button>'+
       '</div></div>';
   }).join('');
 
-  /* ── ต้นทางการลาก · ปล่อยกลางอากาศ = ไม่เกิดอะไรขึ้น ── */
-  $('staffList').querySelectorAll('[data-sid][draggable]').forEach(function(el){
-    el.ondragstart=function(e){
-      DRAG_STAFF=el.dataset.sid;
-      el.classList.add('dragging');
-      try{ e.dataTransfer.setData('text/plain', DRAG_STAFF); e.dataTransfer.effectAllowed='move'; }catch(_){}
-    };
-    el.ondragend=function(){
-      el.classList.remove('dragging'); DRAG_STAFF=null;
-      var tl=$('teamList'); if(tl) tl.querySelectorAll('.dropok').forEach(function(c){ c.classList.remove('dropok'); });
-    };
-  });
-
-  $('staffList').querySelectorAll('[data-team]').forEach(function(el){
-    el.onchange=async function(){
-      var was=staffOf(el.dataset.team).team_id;
-      await staffPatch(el.dataset.team, {team_id: el.value||null,
-        is_leader: el.value? staffOf(el.dataset.team).is_leader : false}, true);
-      await syncTeamLeader(was); await syncTeamLeader(el.value||null);
-      await loadMgr();
-      if(was && !teamLeader(was) && teamStaff(was).length)
-        toast('ทีม '+(teamOf(was).name||'')+' ไม่มีหัวหน้าทีมแล้ว — ตั้งคนใหม่ด้วย', 5000);
-    };
-  });
-  $('staffList').querySelectorAll('[data-lead]').forEach(function(b){
-    b.onclick=async function(){
-      var x=staffOf(b.dataset.lead); if(!x.team_id) return;
-      if(!x.is_leader){
-        /* ทีมหนึ่งมีหัวหน้าคนเดียว — ปลดคนเดิมก่อน */
-        var old=teamLeader(x.team_id);
-        if(old && old.id!==x.id) await db.rpc('rtp_save_staff',{p_target:old.id, p_patch:{is_leader:false}});
-      }
-      await db.rpc('rtp_save_staff',{p_target:x.id, p_patch:{is_leader: !x.is_leader}});
-      await syncTeamLeader(x.team_id);
-      toast('บันทึกแล้ว'); loadMgr();
-    };
-  });
   $('staffList').querySelectorAll('[data-sedit]').forEach(function(b){
     b.onclick=function(){ staffForm(b.dataset.sedit); };
   });
@@ -5147,12 +5115,9 @@ function staffForm(id){
       opts.map(function(k){ return '<option value="'+k+'"'+((x.role||'staff')===k?' selected':'')+'>'+ROLES[k]+'</option>'; }).join('')+
     '</select>'+
     '<p style="font-size:11px;color:var(--text3);margin-top:5px">ผู้จัดการขึ้นไปจะเข้าหน้า Dashboard แทนหน้างานเมื่อล็อกอิน</p></div>'+
-    '<div class="fld"><label>ทีม</label><select id="p_team"'+dis+'>'+
-      '<option value="">— ยังไม่เข้าทีม —</option>'+
-      S.teams.map(function(t){ return '<option value="'+t.id+'"'+(x.team_id===t.id?' selected':'')+'>'+esc(t.code+' · '+t.name)+'</option>'; }).join('')+
-    '</select></div>'+
-    '<label style="font-size:13.5px;display:flex;align-items:center;gap:9px;margin-bottom:8px">'+
-      '<input type="checkbox" id="p_lead"'+(x.is_leader?' checked':'')+dis+'> เป็นหัวหน้าทีม</label>'+
+    '<div style="background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:10px 12px;'+
+      'font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:12px">'+
+      'ทีมและหัวหน้าชุดตั้งเป็นรายวันที่หน้า <b>แผนงาน</b> ไม่ได้ผูกกับบัญชี</div>'+
     '<label style="font-size:13.5px;display:flex;align-items:center;gap:9px;margin-bottom:8px">'+
       '<input type="checkbox" id="p_act"'+(x.active!==false?' checked':'')+((mayEdit&&!isSelf&&(x.role!=='super'||isSuper(S.me)))?'':' disabled')+'> เปิดใช้งานบัญชีนี้</label>'+
     '<label style="font-size:13.5px;display:flex;align-items:center;gap:9px;'+
@@ -5175,26 +5140,19 @@ function staffForm(id){
   if(!mayEdit) return;
 
   $('p_save').onclick=async function(){
-    var tid=$('p_team').value||null;
     var p={emp_code:$('p_code').value.trim().toUpperCase(), name:$('p_name').value.trim()||null,
       title:$('p_title')? ($('p_title').value||null) : (x.title||null),
-      phone:$('p_ph').value.trim()||null, team_id:tid, is_leader: tid? $('p_lead').checked : false,
+      phone:$('p_ph').value.trim()||null,
       role: mayRole? $('p_role').value : x.role,
       approved: (isSelf? true : $('p_ok').checked),
       active: (isSelf || (x.role==='super' && !isSuper(S.me)))? true : $('p_act').checked};
-    if(p.approved && p.role==='staff' && !tid && !confirm('อนุมัติแล้วแต่ยังไม่ได้กำหนดทีมประจำ\n\nไม่เป็นไร ระบบนี้จัดคนเป็นรายวันที่หน้าแผนงานอยู่แล้ว\nพอมีชื่อในทีมย่อยของวันไหน งานจะขึ้นให้เขาเอง — ยืนยันหรือไม่?')) return;
     if(!p.approved && RANK[p.role]>=1 && !confirm('ตั้งเป็น'+(ROLES[p.role]||'')+'แล้ว แต่ยังไม่ได้ติ๊ก “อนุมัติให้เข้าใช้งาน”\n\n'+
       'เขาจะยังเข้า Dashboard ไม่ได้ ค้างอยู่ที่หน้ารอ\nบันทึกแบบนี้หรือไม่?')) return;
     if(!p.emp_code) return toast('ต้องมีรหัสพนักงาน');
     if(mayRole && !canGrant(S.me, p.role)) return toast('คุณไม่มีสิทธิ์ตั้งระดับ '+ROLES[p.role]);
     this.disabled=true;
-    if(p.is_leader && tid){
-      var old=teamLeader(tid);
-      if(old && old.id!==id) await db.rpc('rtp_save_staff',{p_target:old.id, p_patch:{is_leader:false}});
-    }
     var r=await db.rpc('rtp_save_staff',{p_target:id, p_patch:p});
     if(r.error){ toast(r.error.message||'บันทึกไม่สำเร็จ', 5000); this.disabled=false; return; }
-    await syncTeamLeader(x.team_id); await syncTeamLeader(tid);
     closeSheet();
     toast(pending && p.approved? ('อนุมัติ '+(p.name||p.emp_code)+' เป็น'+(ROLES[p.role]||'')+'แล้ว') : 'บันทึกแล้ว', 4000);
     loadMgr();
@@ -5397,63 +5355,42 @@ function siteForm(id){
 
 function teamForm(id){
   var t=id? teamOf(id) : {active:true, pin:''};
-  var mem = id? teamStaff(id) : [];
-  var ld  = id? teamLeader(id) : null;
-  var leadField = !id
-    ? '<div style="background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:11px 13px;'+
-      'font-size:12.5px;color:var(--text2);line-height:1.6">สร้างทีมก่อน แล้วค่อยจัดคนเข้าทีมและตั้งหัวหน้าที่การ์ด '+
-      '“พนักงาน · จัดคนเข้าทีม” ด้านล่าง</div>'
-    : (mem.length
-      ? '<div class="fld"><label>หัวหน้าทีม</label><select id="g_lead">'+
-          '<option value="">— ยังไม่มีหัวหน้าทีม —</option>'+
-          mem.map(function(x){ return '<option value="'+x.id+'"'+((ld&&ld.id===x.id)?' selected':'')+'>'+
-            esc((x.name||x.emp_code)+' · '+x.emp_code)+'</option>'; }).join('')+
-        '</select><p style="font-size:11px;color:var(--text3);margin-top:5px">เลือกได้เฉพาะคนที่อยู่ในทีมนี้ '+
-        'ชื่อจะไปแสดงทุกที่ทั้งแผนที่ รายงาน และ Export</p></div>'
-      : '<div style="background:var(--orange-dim);border:1px solid rgba(255,149,0,.3);border-radius:11px;padding:11px 13px;'+
-        'font-size:12.5px;color:#c26c00;line-height:1.6">ทีมนี้ยังไม่มีสมาชิก — จัดคนเข้าทีมที่การ์ด '+
-        '“พนักงาน · จัดคนเข้าทีม” ก่อน แล้วค่อยกลับมาตั้งหัวหน้า</div>');
+  /* ทีมไม่มีสมาชิกประจำและไม่มีหัวหน้าประจำแล้ว — ทั้งสองอย่างตั้งรายวันที่หน้าแผนงาน
+     ตรงนี้จึงเหลือแค่ชื่อทีมกับสรุปงานที่ทีมนี้รับผิดชอบ */
+  var t0=todayISO();
+  var jobs = id? (S.plan||[]).filter(function(a){ return a.team_id===id; }) : [];
+  var soon = jobs.filter(function(a){ return a.work_date>=t0; });
+  var byDay={}, days=[];
+  soon.forEach(function(a){ if(!byDay[a.work_date]){ byDay[a.work_date]=[]; days.push(a.work_date); } byDay[a.work_date].push(a); });
+  days.sort();
 
   sheet(id?'แก้ไขทีม':'เพิ่มทีม',
     '<div class="row"><div class="fld"><label>รหัสทีม</label><input id="g_code" value="'+esc(t.code||'')+'" placeholder="T04"></div>'+
     '<div class="fld"><label>ชื่อทีม</label><input id="g_name" value="'+esc(t.name||'')+'"></div></div>'+
-    leadField+
     '<label style="font-size:13px;display:flex;align-items:center;gap:8px;margin-top:10px">'+
       '<input type="checkbox" id="g_act"'+(t.active!==false?' checked':'')+'> เปิดใช้งานทีมนี้</label>'+
-    (id?('<div class="sec-h" style="margin-top:18px">สมาชิก '+mem.length+' คน · ย้ายทีมได้ที่นี่</div>'+
-      (mem.length? mem.map(function(x){
+    '<div style="background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:11px 13px;'+
+      'font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:12px">'+
+      'ทีมนี้ไม่มีสมาชิกประจำ — คนและหัวหน้าชุดถูกจัดใหม่ทุกวันที่หน้า <b>แผนงาน</b><br>'+
+      'กดที่ช่องของวันนั้นเพื่อจัดทีมย่อยและเลือกคน</div>'+
+    (id? ('<div class="sec-h" style="margin-top:18px">งานข้างหน้าของทีมนี้ '+soon.length+' งาน</div>'+
+      (days.length? days.slice(0,10).map(function(d){
+        var ld=leadOn(id, d);
+        var nP=byDay[d].reduce(function(m,a){ return m+crewCount(a); },0);
         return '<div style="display:flex;align-items:center;gap:8px;background:var(--s1);border:1px solid var(--border);'+
           'border-radius:10px;padding:8px 10px;margin-bottom:6px">'+
-          '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">'+esc(x.name||x.emp_code)+
-            ((ld&&ld.id===x.id)?' <span class="chip c-purple">หัวหน้า</span>':'')+'</div>'+
-            '<div style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">'+esc(x.emp_code)+
-            (x.phone?' · '+esc(x.phone):'')+'</div></div>'+
-          '<select class="tin" data-mv="'+x.id+'" style="min-width:150px;font-size:11.5px;padding:5px 8px"'+
-            (canEdit(S.me,x)?'':' disabled')+'>'+
-            S.teams.filter(function(t){return t.active!==false;}).map(function(t){
-              return '<option value="'+t.id+'"'+(t.id===id?' selected':'')+'>'+esc(t.code+' · '+t.name)+'</option>'; }).join('')+
-            '<option value="">— ออกจากทีม —</option>'+
-          '</select></div>'; }).join('')
-        : '<div style="font-size:12px;color:var(--text3)">ยังไม่มีสมาชิก</div>')+
+          '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">'+dayText(d)+
+            ' <span style="color:var(--text3);font-weight:400">'+byDay[d].length+' งาน</span></div>'+
+            '<div style="font-size:10.5px;color:var(--text3)">'+
+              (ld? ('หัวหน้าชุด: '+esc(fullName(ld))) : 'ยังไม่ได้ตั้งหัวหน้าชุด')+
+              ' · คน '+nP+'</div></div>'+
+          '<span class="chip '+(nP?'c-blue':'c-orange')+'">'+(nP? nP+' คน':'ยังไม่จัดคน')+'</span></div>';
+      }).join('') : '<div style="font-size:12px;color:var(--text3)">ยังไม่มีงานข้างหน้า</div>')+
       '<p style="font-size:11.5px;color:var(--text2);margin-top:14px;line-height:1.65">'+
       'ส่งลิงก์นี้ให้พนักงานบันทึกไว้หน้าจอมือถือ:<br>'+
       '<code style="font-size:11px;color:var(--accent);word-break:break-all">'+esc(location.href.split('?')[0])+'</code><br>'+
-      'เข้าครั้งแรกให้ใส่รหัสพนักงานแล้วตั้ง PIN เอง</p>'):''),
+      'เข้าครั้งแรกให้ใส่รหัสพนักงานแล้วตั้ง PIN เอง</p>') : ''),
     '<div class="row">'+(id?'<button class="btn ghost sm" id="g_del" style="flex:0 0 90px">ลบ</button>':'')+'<button class="btn sm" id="g_save">บันทึก</button></div>');
-
-  document.querySelectorAll('[data-mv]').forEach(function(sel){
-    sel.onchange=async function(){
-      var sid=sel.dataset.mv, to=sel.value||null, who=staffOf(sid);
-      var wasLead=who.is_leader;
-      var r=await db.rpc('rtp_save_staff',{p_target:sid, p_patch:{team_id:to, is_leader:false}});
-      if(r.error) return toast('ย้ายทีมไม่สำเร็จ: '+r.error.message,4000);
-      await syncTeamLeader(id); await syncTeamLeader(to);
-      await loadMgr();
-      toast((who.name||who.emp_code)+(to? (' → '+(teamOf(to).name||'')) : ' ออกจากทีมแล้ว'), 3400);
-      if(wasLead && teamStaff(id).length) toast('ทีมนี้ไม่มีหัวหน้าทีมแล้ว — ตั้งคนใหม่ด้วย', 5000);
-      teamForm(id);
-    };
-  });
 
   $('g_save').onclick=async function(){
     var p={code:$('g_code').value.trim().toUpperCase(), name:$('g_name').value.trim(), active:$('g_act').checked};
@@ -5462,18 +5399,10 @@ function teamForm(id){
     this.disabled=true;
     var r = id? await db.from('it_teams').update(p).eq('id',id) : await db.from('it_teams').insert(p);
     if(r.error){ toast('บันทึกไม่สำเร็จ: '+r.error.message,4000); this.disabled=false; return; }
-    if(id && $('g_lead')){
-      var pick=$('g_lead').value;
-      for(var i=0;i<mem.length;i++){
-        var want = (mem[i].id===pick);
-        if(!!mem[i].is_leader !== want) await db.rpc('rtp_save_staff',{p_target:mem[i].id, p_patch:{is_leader:want}});
-      }
-      await syncTeamLeader(id);
-    }
     closeSheet(); toast('บันทึกทีมแล้ว'); loadMgr();
   };
   if(id) $('g_del').onclick=async function(){
-    if(!confirm('ลบทีมนี้?\nคนในทีมจะกลับไปเป็นสถานะรอจัดทีม')) return;
+    if(!confirm('ลบทีมนี้?\n\nงานที่มอบหมายให้ทีมนี้ไว้จะถูกลบตามไปด้วย\nรวมถึงทีมย่อยและรายชื่อของงานเหล่านั้น')) return;
     await db.from('it_teams').delete().eq('id',id); closeSheet(); toast('ลบแล้ว'); loadMgr();
   };
 }
@@ -5627,7 +5556,9 @@ $('btnRpRun').onclick=async function(){
   $('exA').onclick=function(){ csv('assignments_'+f+'_'+t, A.map(function(a){
     var s=siteOf(a.site_id), tm=teamOf(a.team_id);
     return {วันที่:a.work_date, รหัสงาน:s.code, ไซต์:s.name, ลูกค้า:s.customer, ทีม:tm.code+' '+tm.name,
-      หัวหน้าทีม:leadInfo(tm).name, เบอร์หัวหน้าทีม:leadInfo(tm).phone, สถานะ:(AST[a.status]||{}).l, คืบหน้า:a.progress,
+      หัวหน้าชุด:(function(){ var lj=leadOfJob(a); return lj? fullName(lj) : ''; })(),
+      เบอร์หัวหน้าชุด:(function(){ var lj=leadOfJob(a); return lj? (lj.phone||'') : ''; })(),
+      สถานะ:(AST[a.status]||{}).l, คืบหน้า:a.progress,
       เช็คอิน:a.checkin_at?fmtDT(a.checkin_at):'',
       ห่างจากไซต์กม: geoOn()&&a.checkin_dist_m!=null?(a.checkin_dist_m/1000).toFixed(2):'',
       พิกัดเช็คอิน: geoOn()&&a.checkin_lat!=null?(a.checkin_lat.toFixed(6)+', '+a.checkin_lng.toFixed(6)):'',
@@ -5772,6 +5703,14 @@ async function loadTeamData(){
     var mine={}; S.myJobs.forEach(function(x){ mine[x.id]=1; });
     S.asgs=S.asgs.filter(function(a){ return mine[a.id]; });
   }
+  /* ต้องรู้ว่าวันนี้ใครอยู่ทีมย่อยไหนและหน้าที่อะไร — ฝั่งหน้างานก็ต้องใช้ */
+  await loadDuties();
+  await loadCrew(S.asgs.map(function(a){ return a.id; }));
+  /* รายชื่อพนักงานทั้งหมด เพื่อแปลง staff_id ในทีมย่อยเป็นชื่อคน */
+  try{
+    var all=await db.from('it_staff').select('id,emp_code,title,name,phone,role,active');
+    if(!all.error && all.data && all.data.length) S.staff=all.data;
+  }catch(e){}
   S.team=r[3].data||null; S.staff=r[4].data||[]; S.icats=r[5].data||[]; S.hols=r[6].data||[];
   var openN=S.issues.filter(function(i){ return i.status!=='closed'&&i.status!=='resolved'; }).length;
   var e=$('tIssN'); e.textContent=openN; e.classList.toggle('hide', !openN);
@@ -5841,7 +5780,7 @@ function renderNoTeam(){
       S.teams.map(function(t){
         return '<div class="jcard" data-vt="'+t.id+'"><div class="jcard-t"><span class="nm">'+esc(t.name)+'</span>'+
           '<span class="chip c-gray">'+esc(t.code)+'</span></div>'+
-          '<div class="jcard-s">'+esc(leadInfo(t).name||'ยังไม่มีหัวหน้าทีม')+'</div></div>'; }).join('')+
+          '<div class="jcard-s">'+esc(leadInfo(t).name||'ยังไม่ตั้งหัวหน้าชุด')+'</div></div>'; }).join('')+
       '<div class="mpad" style="margin-top:12px"><button class="bigbtn" id="ntBack" '+
         'style="background:var(--s3);color:var(--text);box-shadow:none">🖥 กลับไป Dashboard</button></div>';
     $('tBody').querySelectorAll('[data-vt]').forEach(function(c){
@@ -5886,7 +5825,7 @@ function dayText(d){
 
 function renderJobs(){
   $('tTitle').textContent='แผนงานของฉัน';
-  $('tSub').textContent=meName()+' · '+S.team.name+(S.me.is_leader?' · หัวหน้าทีม':'');
+  $('tSub').textContent=meName()+' · '+S.team.name;
 
   var today=todayISO(), tmr=addDays(today,1);
   var tJobs = S.asgs.filter(function(a){ return a.work_date===today; });
@@ -6506,23 +6445,34 @@ async function teamIssueSheet(id){
 function renderMe(){
   $('tTitle').textContent='ทีมของฉัน'; $('tSub').textContent=S.me.emp_code;
   var wk=S.asgs, done=wk.filter(function(a){return a.status==='done';}).length;
-  var mates=S.staff.filter(function(x){return x.active;});
+  /* ไม่มีทีมประจำแล้ว — แสดง "คนที่ไปด้วยกันวันนี้" จากรายชื่อที่ถูกจัดไว้ในแผนงาน */
+  var today=todayISO();
+  var mates=crewOn(S.team.id, today);
+  var meLead=mates.filter(function(m){ return m.lead && m.s.id===S.me.id; }).length>0;
+  var myDuty=(mates.filter(function(m){ return m.s.id===S.me.id; })[0]||{}).duty||'';
   $('tBody').innerHTML=
     '<div class="blk"><div class="blk-h">ข้อมูลของฉัน</div><div class="blk-c" style="font-size:14px;line-height:1.9">'+
-      '<div><b>'+esc(S.me.name||'—')+'</b> <span style="color:var(--text3)">('+esc(S.me.emp_code)+')</span>'+
-        (S.me.is_leader?' <span class="chip c-purple">หัวหน้าทีม</span>':'')+'</div>'+
+      '<div><b>'+esc(fullName(S.me)||'—')+'</b> <span style="color:var(--text3)">('+esc(S.me.emp_code)+')</span>'+
+        (meLead?' <span class="chip c-purple">หัวหน้าชุดวันนี้</span>':'')+'</div>'+
       '<div>โทร: '+esc(S.me.phone||'—')+'</div>'+
-      '<div>ทีม: <b>'+esc(S.team.name)+'</b> <span style="color:var(--text3)">('+esc(S.team.code)+')</span></div>'+
+      '<div>วันนี้ไปกับ: <b>'+esc(S.team.name)+'</b> <span style="color:var(--text3)">('+esc(S.team.code)+')</span>'+
+        (myDuty? ' · หน้าที่ <b>'+esc(myDuty)+'</b>' : '')+'</div>'+
+      '<div style="font-size:11.5px;color:var(--text3);line-height:1.5;margin-top:4px">'+
+        'ทีมจัดใหม่ทุกวันที่หน้าแผนงาน — วันอื่นอาจไปกับทีมอื่นได้</div>'+
     '</div></div>'+
-    '<div class="blk"><div class="blk-h">สมาชิกในทีม ('+mates.length+')</div>'+
-      mates.map(function(x){
-        return '<div class="tl"><div class="tl-d" style="background:'+(x.is_leader?'#5856d6':'#c7c7cc')+'"></div>'+
-          '<div class="tl-c"><div class="tl-b" style="font-weight:600">'+esc(x.name||x.emp_code)+
-            (x.is_leader?' <span class="chip c-purple">หัวหน้า</span>':'')+
+    '<div class="blk"><div class="blk-h">คนที่ไปด้วยกันวันนี้ ('+mates.length+')</div>'+
+      (mates.length? mates.map(function(m){
+        var x=m.s;
+        return '<div class="tl"><div class="tl-d" style="background:'+(m.lead?'#5856d6':'#c7c7cc')+'"></div>'+
+          '<div class="tl-c"><div class="tl-b" style="font-weight:600">'+esc(fullName(x))+
+            (m.lead?' <span class="chip c-purple">หัวหน้าชุด</span>':'')+
+            (m.duty?' <span class="chip c-gray">'+esc(m.duty)+'</span>':'')+
             (x.id===S.me.id?' <span class="chip c-blue">ฉัน</span>':'')+'</div>'+
           '<div class="tl-m">'+esc(x.emp_code)+(x.phone?' · '+esc(x.phone):'')+'</div></div>'+
           (x.phone&&x.id!==S.me.id?'<a href="tel:'+esc(x.phone)+'" class="tb-btn" style="align-self:center;text-decoration:none">โทร</a>':'')+
-          '</div>'; }).join('')+
+          '</div>'; }).join('')
+        : '<div class="blk-c" style="font-size:13.5px;color:var(--text2);line-height:1.7">'+
+          'วันนี้ยังไม่ได้จัดรายชื่อไว้ในแผนงาน<br>ถ้ามีคนไปด้วย ให้ผู้จัดการจัดชื่อเข้าทีมย่อยของวันนี้ก่อน</div>')+
     '</div>'+
     '<div class="blk"><div class="blk-h">7 วันที่ผ่านมา (ทั้งทีม)</div><div class="blk-c" style="font-size:14px;line-height:1.9">'+
       '<div>งานที่ได้รับ: <b>'+wk.length+'</b> งาน</div>'+
