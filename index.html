@@ -472,7 +472,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='7.0';
+window.APP_VER='7.1';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -2024,6 +2024,7 @@ async function loadMgr(){
     catch(e){ errs.push(jobs[i][0]+' → '+(e.message||e)); res.push([]); }
   }
   S.sites=res[0]; S.teams=res[1]; S.asgs=res[2]; S.staff=res[3]; S.work=res[4]; S.pins=res[5]; S.icats=res[6]; S.hols=res[7]; S.issues=res[8];
+  await loadDuties();                              /* รายการหน้าที่สำหรับทีมย่อย */
 
   try{ renderAll(); }
   catch(e){ errs.push('แสดงผลหน้าจอ → '+(e.message||e)); }
@@ -2388,11 +2389,11 @@ function jobsAt(teamId, d){
 }
 function cellText(a){
   var si=siteOf(a.site_id), st=AST[a.status]||AST.assigned;
-  var c=crewOf(a).length;
+  var c=crewCount(a), ns=subsOf(a).length;
   return (si.code? si.code+' ' : '')+(si.name||'—')+
     (a.scope? (' — '+a.scope) : '')+
     ' ['+st.l+(a.progress? ' '+pct(a.progress)+'%' : '')+']'+
-    (c? ' 👥'+c+(crewIsCustom(a)?'*':'') : '');
+    (c? (' 👥'+c+(ns>1? ('/'+ns+'ชุด') : '')) : ' ⚠️ยังไม่จัดคน');
 }
 
 function renderSchedule(){
@@ -2505,13 +2506,20 @@ function renderSchedule(){
   if(nClash) $('pnNote').innerHTML += ' · <b style="color:#c26c00">⚠️ งานซ้อน '+nClash+' ช่อง</b>';
 
   wrap.querySelectorAll('[data-job]').forEach(function(el){
-    el.onclick=function(e){ e.stopPropagation(); openAsg(el.dataset.job); };
+    el.onclick=function(e){
+      e.stopPropagation();
+      var a=(S.plan||[]).filter(function(x){return x.id===el.dataset.job;})[0];
+      /* คลิกงานบนแผนงาน = จัดคน เพราะเป็นสิ่งที่ทำบ่อยที่สุดตรงนี้
+         ดูรายละเอียด/รายงานให้กดจากภาพรวมหน้างานแทน */
+      if(a && rank(S.me)>=1) crewSheet(a);
+      else openAsg(el.dataset.job);
+    };
     el.oncontextmenu=function(e){
       e.preventDefault(); e.stopPropagation();
       var a=(S.plan||[]).filter(function(x){return x.id===el.dataset.job;})[0];
       if(a) asgActions(a);
     };
-    el.title=(el.title||'')+'  ·  คลิกขวาเพื่อเลื่อน/ย้าย/ลบ';
+    el.title=(el.title||'')+'  ·  คลิกเพื่อจัดทีมย่อย  ·  คลิกขวาเพื่อเลื่อน/ย้าย/ลบ';
   });
   wrap.querySelectorAll('[data-add]').forEach(function(td){
     td.onclick=function(){ var v=td.dataset.add.split('|'); quickAssign(v[0], v[1]); };
@@ -2686,143 +2694,289 @@ function holidayForm(id){
 }
 
 /* ═════════════════════════════════════════════════════════
-   ชุดคนที่ไปหน้างาน — แยกจาก "ทีมประจำ" โดยตั้งใจ
-   คนย้ายทีมข้ามวันได้ ทีมประจำจึงบอกไม่ได้ว่าวันนั้นใครไปจริง
-   ยังไม่ได้จัดชุดเอง = ใช้สมาชิกทีมประจำเป็นค่าตั้งต้น (ไม่ต้องกรอกทุกงาน)
+   ทีมย่อยและหน้าที่รายวัน
+   ไม่มีใครถูกตั้งให้อยู่ทีมถาวร — จัดคนเป็นราย "งาน" (ไซต์ × ทีม × วัน)
+   หนึ่งงานแบ่งเป็นทีมย่อยได้หลายชุด แต่ละคนมีหน้าที่ของวันนั้น
+   จัดวันไหนไปแล้ววันนั้นถูกล็อกไว้ ย้ายคนวันหลังไม่กระทบย้อนหลัง
    ═════════════════════════════════════════════════════════ */
-var CREW={};          /* assignment_id -> [{staff_id,is_lead,note}] เฉพาะงานที่จัดชุดเอง */
+var SUBS={};    /* assignment_id -> [subteam] */
+var CREW={};    /* assignment_id -> [crew row] */
 
 async function loadCrew(asgIds){
-  if(!asgIds || !asgIds.length) return;
+  asgIds=(asgIds||[]).filter(Boolean);
+  if(!asgIds.length) return;
   try{
-    var r=await db.from('it_assignment_crew').select('*').in('assignment_id', asgIds);
-    if(r.error) return;
-    asgIds.forEach(function(id){ delete CREW[id]; });
-    (r.data||[]).forEach(function(c){
-      if(!CREW[c.assignment_id]) CREW[c.assignment_id]=[];
-      CREW[c.assignment_id].push(c);
-    });
+    var a=await db.from('it_subteams').select('*').in('assignment_id',asgIds).order('sort');
+    var b=await db.from('it_assignment_crew').select('*').in('assignment_id',asgIds);
+    asgIds.forEach(function(id){ SUBS[id]=[]; CREW[id]=[]; });
+    if(!a.error) (a.data||[]).forEach(function(x){ (SUBS[x.assignment_id]=SUBS[x.assignment_id]||[]).push(x); });
+    if(!b.error) (b.data||[]).forEach(function(x){ (CREW[x.assignment_id]=CREW[x.assignment_id]||[]).push(x); });
   }catch(e){}
 }
-/* รายชื่อที่ใช้จริงของงานหนึ่ง — จัดเองก่อน ถ้าไม่มีค่อยใช้ทีมประจำ */
-function crewOf(a){
-  if(!a) return [];
-  var rows=CREW[a.id];
-  if(rows && rows.length){
-    return rows.map(function(c){
-      var s=staffOf(c.staff_id);
-      return {id:c.staff_id, title:s.title, name:s.name, emp_code:s.emp_code, phone:s.phone,
-              is_lead:!!c.is_lead, note:c.note||'', custom:true};
-    }).sort(function(x,y){ return (y.is_lead?1:0)-(x.is_lead?1:0) ||
-        String(x.emp_code).localeCompare(String(y.emp_code)); });
-  }
-  return teamStaff(a.team_id).map(function(s){
-    return {id:s.id, title:s.title, name:s.name, emp_code:s.emp_code, phone:s.phone,
-            is_lead:!!s.is_leader, note:'', custom:false};
-  }).sort(function(x,y){ return (y.is_lead?1:0)-(x.is_lead?1:0) ||
-      String(x.emp_code).localeCompare(String(y.emp_code)); });
-}
-function crewIsCustom(a){ return !!(a && CREW[a.id] && CREW[a.id].length); }
+function subsOf(a){ return (a && SUBS[a.id]) ? SUBS[a.id].slice().sort(function(x,y){ return x.sort-y.sort; }) : []; }
+function crewRows(a){ return (a && CREW[a.id]) ? CREW[a.id] : []; }
+function crewCount(a){ return crewRows(a).length; }
+function dutyOf(id){ return (S.duties||[]).filter(function(d){ return d.id===id; })[0]||null; }
 
-/* ── หน้าจัดชุดคน: ค้นหาได้ ติ๊กเลือกได้ ตั้งหัวหน้าชุดของวันนั้นได้ ── */
-var CREW_PICK={ids:[], lead:null, q:''};
+/* รายชื่อแบนเรียงตามทีมย่อย — ใช้ตอนพิมพ์และ Export */
+function crewFlat(a){
+  var out=[], subs=subsOf(a), rows=crewRows(a);
+  subs.forEach(function(st){
+    rows.filter(function(c){ return c.subteam_id===st.id; })
+      .sort(function(x,y){ return (y.is_lead?1:0)-(x.is_lead?1:0); })
+      .forEach(function(c){
+        var s=staffOf(c.staff_id), d=dutyOf(c.duty_id);
+        out.push({sub:st.name, title:s.title||'', name:s.name||s.emp_code||'', emp:s.emp_code||'',
+                  phone:s.phone||'', duty:d?d.label:'', lead:!!c.is_lead, note:c.note||''});
+      });
+  });
+  /* คนที่ยังไม่ได้อยู่ทีมย่อยไหน (เผื่อข้อมูลเก่า) */
+  rows.filter(function(c){ return !c.subteam_id; }).forEach(function(c){
+    var s=staffOf(c.staff_id), d=dutyOf(c.duty_id);
+    out.push({sub:'ยังไม่จัดทีมย่อย', title:s.title||'', name:s.name||s.emp_code||'', emp:s.emp_code||'',
+              phone:s.phone||'', duty:d?d.label:'', lead:!!c.is_lead, note:c.note||''});
+  });
+  return out;
+}
+
+/* ── หน้าจัดทีมย่อย ── */
+var CW={a:null, q:'', target:null};
 async function crewSheet(a){
   if(!a) return;
-  var si=siteOf(a.site_id), tm=teamOf(a.team_id);
+  CW.a=a; CW.q=''; CW.target=null;
   await loadCrew([a.id]);
-  var cur=crewOf(a);
-  CREW_PICK.ids=cur.map(function(x){ return x.id; });
-  CREW_PICK.lead=(cur.filter(function(x){ return x.is_lead; })[0]||{}).id||null;
-  CREW_PICK.q='';
-
-  sheet('จัดคนไปหน้างาน',
+  var si=siteOf(a.site_id), tm=teamOf(a.team_id);
+  sheet('จัดทีมย่อยและหน้าที่',
     '<div style="background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.7">'+
       '<b>'+esc(si.name||'—')+'</b> <span style="color:var(--text3)">'+esc(si.code||'')+'</span><br>'+
-      '<span style="color:var(--text2)">'+esc(tm.name||'')+' · '+dayText(a.work_date)+'</span></div>'+
-    '<div class="fld"><input class="mt-q" id="cwQ" placeholder="🔍 ค้นหาชื่อ / รหัส / ทีม"></div>'+
-    '<div id="cwNote" style="font-size:11.5px;line-height:1.6;margin-bottom:9px"></div>'+
-    '<div id="cwList" style="max-height:44vh;overflow:auto;border:1px solid var(--border);border-radius:11px"></div>'+
-    '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:11px">'+
-      'เลือกเฉพาะคนที่ไปงานนี้ในวันนี้ ยืมคนจากทีมอื่นได้ · มีผลเฉพาะงานวันนี้ ไม่กระทบทีมประจำและวันอื่น</p>',
-    '<div class="row"><button class="btn ghost" id="cwReset">ใช้ทีมประจำ</button>'+
-      '<button class="btn" id="cwSave">บันทึกรายชื่อ</button></div>');
+      '<span style="color:var(--text2)">'+esc(tm.code||'')+' '+esc(tm.name||'')+' · '+dayText(a.work_date)+'</span></div>'+
+    '<div class="row" style="margin-bottom:12px">'+
+      '<button class="btn ghost sm" id="cwAddSub">＋ เพิ่มทีมย่อย</button>'+
+      '<button class="btn ghost sm" id="cwCopy">📋 คัดลอกจากวันก่อน</button>'+
+    '</div>'+
+    '<div id="cwSubs"></div>'+
+    '<button class="btn ghost sm" id="cwDuties" style="margin-top:12px">⚙️ ตั้งค่ารายการหน้าที่</button>'+
+    '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:10px">'+
+      'มีผลเฉพาะงานวันนี้ · แก้วันอื่นไม่กระทบกัน</p>', '');
+  drawSubs();
+  $('cwAddSub').onclick=addSub;
+  $('cwCopy').onclick=copyPrev;
+  $('cwDuties').onclick=function(){ dutySheet(function(){ crewSheet(CW.a); }); };
+}
+
+function drawSubs(){
+  var a=CW.a, subs=subsOf(a), rows=crewRows(a);
+  var box=$('cwSubs'); if(!box) return;
+  if(!subs.length){
+    box.innerHTML='<div class="empty" style="padding:22px 14px"><b>ยังไม่มีทีมย่อย</b>'+
+      'กด “เพิ่มทีมย่อย” แล้วเลือกคนเข้าไป · เพิ่มได้หลายชุดตามที่ต้องการ</div>';
+    return;
+  }
+  var duties=(S.duties||[]).filter(function(d){ return d.active!==false; });
+  box.innerHTML=subs.map(function(st,i){
+    var mem=rows.filter(function(c){ return c.subteam_id===st.id; })
+      .sort(function(x,y){ return (y.is_lead?1:0)-(x.is_lead?1:0); });
+    return '<div class="card" style="margin-bottom:11px">'+
+      '<div class="card-h" style="padding:9px 12px">'+
+        '<input class="mt-q" data-subname="'+st.id+'" value="'+esc(st.name)+'" '+
+          'style="flex:1;font-weight:700;text-transform:none;letter-spacing:0;padding:6px 9px">'+
+        '<span class="chip c-gray">'+mem.length+' คน</span>'+
+        '<button class="tb-btn" data-subdel="'+st.id+'" title="ลบทีมย่อยนี้">🗑</button>'+
+      '</div>'+
+      (mem.length? mem.map(function(c){
+        var s=staffOf(c.staff_id);
+        return '<div class="brow" style="cursor:default;display:flex;align-items:center;gap:9px;flex-wrap:wrap">'+
+          '<span style="flex:1;min-width:150px">'+
+            '<span class="nm">'+esc(fullName(s))+'</span>'+
+            (c.is_lead?'<span class="chip c-purple" style="margin-left:6px">หัวหน้าชุด</span>':'')+
+            '<div class="brow-s"><span class="tm">'+esc(s.emp_code||'')+'</span>'+
+              (s.phone?'<span>'+esc(s.phone)+'</span>':'')+'</div></span>'+
+          '<select class="tin" data-duty="'+c.id+'" style="min-width:150px">'+
+            '<option value="">— ยังไม่ระบุหน้าที่ —</option>'+
+            duties.map(function(d){
+              return '<option value="'+d.id+'"'+(c.duty_id===d.id?' selected':'')+'>'+esc(d.label)+'</option>';
+            }).join('')+'</select>'+
+          '<button class="tb-btn" data-lead2="'+c.id+'">'+(c.is_lead?'★':'☆')+'</button>'+
+          '<button class="tb-btn" data-cwdel="'+c.id+'">✕</button>'+
+        '</div>';
+      }).join('') : '<div class="empty" style="padding:14px">ยังไม่มีคนในทีมย่อยนี้</div>')+
+      '<div style="padding:9px 12px"><button class="btn ghost sm" data-addppl="'+st.id+'">＋ เพิ่มคนเข้าทีมย่อยนี้</button></div>'+
+    '</div>';
+  }).join('');
+
+  box.querySelectorAll('[data-subname]').forEach(function(el){
+    el.onchange=async function(){
+      var r=await db.from('it_subteams').update({name:el.value.trim()||'ทีมย่อย'}).eq('id',el.dataset.subname);
+      if(r.error) return toast('เปลี่ยนชื่อไม่สำเร็จ: '+r.error.message,4000);
+      await loadCrew([CW.a.id]); drawSubs();
+    };
+  });
+  box.querySelectorAll('[data-subdel]').forEach(function(b){
+    b.onclick=async function(){
+      if(!confirm('ลบทีมย่อยนี้? คนที่อยู่ในทีมย่อยนี้จะถูกเอาออกจากงานวันนี้ด้วย')) return;
+      var r=await db.from('it_subteams').delete().eq('id',b.dataset.subdel);
+      if(r.error) return toast('ลบไม่สำเร็จ: '+r.error.message,4000);
+      await loadCrew([CW.a.id]); drawSubs(); renderSchedule();
+    };
+  });
+  box.querySelectorAll('[data-duty]').forEach(function(el){
+    el.onchange=async function(){
+      var r=await db.from('it_assignment_crew').update({duty_id:el.value||null}).eq('id',el.dataset.duty);
+      if(r.error) return toast('บันทึกหน้าที่ไม่สำเร็จ: '+r.error.message,4000);
+      await loadCrew([CW.a.id]); drawSubs();
+    };
+  });
+  box.querySelectorAll('[data-lead2]').forEach(function(b){
+    b.onclick=async function(){
+      var id=b.dataset.lead2;
+      var me=crewRows(CW.a).filter(function(c){ return c.id===id; })[0]; if(!me) return;
+      /* หัวหน้าชุดมีได้คนเดียวต่อทีมย่อย */
+      if(!me.is_lead){
+        var others=crewRows(CW.a).filter(function(c){ return c.subteam_id===me.subteam_id && c.is_lead; });
+        for(var i=0;i<others.length;i++) await db.from('it_assignment_crew').update({is_lead:false}).eq('id',others[i].id);
+      }
+      await db.from('it_assignment_crew').update({is_lead:!me.is_lead}).eq('id',id);
+      await loadCrew([CW.a.id]); drawSubs();
+    };
+  });
+  box.querySelectorAll('[data-cwdel]').forEach(function(b){
+    b.onclick=async function(){
+      var r=await db.from('it_assignment_crew').delete().eq('id',b.dataset.cwdel);
+      if(r.error) return toast('เอาออกไม่สำเร็จ: '+r.error.message,4000);
+      await loadCrew([CW.a.id]); drawSubs(); renderSchedule();
+    };
+  });
+  box.querySelectorAll('[data-addppl]').forEach(function(b){
+    b.onclick=function(){ pickPeople(b.dataset.addppl); };
+  });
+}
+
+async function addSub(){
+  var a=CW.a, subs=subsOf(a);
+  var r=await db.from('it_subteams').insert({assignment_id:a.id,
+    name:'ทีมย่อย '+(subs.length+1), sort:(subs.length+1)*10}).select().single();
+  if(r.error) return toast('เพิ่มทีมย่อยไม่สำเร็จ: '+r.error.message,4500);
+  await loadCrew([a.id]); drawSubs();
+}
+
+/* งานล่าสุดของทีมเดียวกันก่อนหน้าวันนี้ — เอาไว้คัดลอกรายชื่อมาทั้งชุด */
+async function copyPrev(){
+  var a=CW.a;
+  var r=await db.from('it_assignments').select('*').eq('team_id',a.team_id)
+        .lt('work_date',a.work_date).order('work_date',{ascending:false}).limit(1);
+  var prev=(r.data||[])[0];
+  if(!prev) return toast('ไม่พบงานก่อนหน้าของทีมนี้');
+  await loadCrew([prev.id]);
+  if(!crewCount(prev)) return toast('งานวันก่อน ('+dayText(prev.work_date)+') ยังไม่ได้จัดคน');
+  if(!confirm('คัดลอกทีมย่อยและรายชื่อจาก '+dayText(prev.work_date)+' มาทั้งชุด?\n\nรายชื่อที่จัดไว้ในวันนี้จะถูกแทนที่')) return;
+  var c=await db.rpc('rtp_copy_crew',{p_from:prev.id, p_to:a.id});
+  if(c.error) return toast('คัดลอกไม่สำเร็จ: '+c.error.message,4500);
+  await loadCrew([a.id]); drawSubs(); renderSchedule();
+  toast('คัดลอกมา '+(c.data||0)+' คนแล้ว',3200);
+}
+
+/* ── เลือกคนเข้าทีมย่อย — ค้นหาได้ ── */
+function pickPeople(subId){
+  CW.target=subId; CW.q='';
+  var already=crewRows(CW.a).map(function(c){ return c.staff_id; });
+  sheet('เลือกคนเข้าทีมย่อย',
+    '<div class="fld"><input class="mt-q" id="ppQ" placeholder="🔍 ค้นหาชื่อ / รหัสพนักงาน / เบอร์โทร"></div>'+
+    '<div id="ppList" style="max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:11px"></div>'+
+    '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:10px">'+
+      'แตะชื่อเพื่อเพิ่มเข้าทีมย่อยทันที · คนที่อยู่ในงานนี้แล้วจะไม่ขึ้นในรายการ</p>',
+    '<button class="btn" onclick="crewSheet(CW.a)">เสร็จแล้ว</button>');
 
   var draw=function(){
-    var q=CREW_PICK.q;
-    var pool=S.staff.filter(function(x){ return x.active && x.approved!==false && (rank(x)<4 || isSuper(S.me)); });
-    if(q) pool=pool.filter(function(x){
-      var t=teamOf(x.team_id)||{};
-      return ((x.title||'')+' '+(x.name||'')+' '+(x.emp_code||'')+' '+(t.code||'')+' '+(t.name||''))
-        .toLowerCase().indexOf(q)>=0;
+    var pool=S.staff.filter(function(x){
+      return x.active && x.approved!==false && already.indexOf(x.id)<0 && (rank(x)<4 || isSuper(S.me));
     });
-    /* คนที่เลือกแล้วขึ้นบน แล้วตามด้วยคนในทีมประจำ แล้วค่อยคนอื่น */
-    pool.sort(function(x,y){
-      var sx=CREW_PICK.ids.indexOf(x.id)>=0?0:1, sy=CREW_PICK.ids.indexOf(y.id)>=0?0:1;
-      if(sx!==sy) return sx-sy;
-      var tx=x.team_id===a.team_id?0:1, ty=y.team_id===a.team_id?0:1;
-      if(tx!==ty) return tx-ty;
-      return String(x.emp_code).localeCompare(String(y.emp_code));
+    if(CW.q) pool=pool.filter(function(x){
+      return ((x.title||'')+' '+(x.name||'')+' '+(x.emp_code||'')+' '+(x.phone||''))
+        .toLowerCase().indexOf(CW.q)>=0;
     });
-    $('cwNote').innerHTML='เลือกแล้ว <b>'+CREW_PICK.ids.length+' คน</b>'+
-      (crewIsCustom(a)? ' · <span style="color:var(--accent)">งานนี้จัดชุดเองไว้แล้ว</span>'
-                      : ' · <span style="color:var(--text3)">ตอนนี้ใช้สมาชิกทีมประจำอยู่</span>');
-    $('cwList').innerHTML = pool.length? pool.map(function(x){
-      var on=CREW_PICK.ids.indexOf(x.id)>=0;
-      var t=teamOf(x.team_id)||{};
-      var out=x.team_id!==a.team_id;
-      return '<label class="brow" style="cursor:pointer;display:flex;align-items:center;gap:10px'+
-        (on?';background:rgba(0,122,255,.06)':'')+'">'+
-        '<input type="checkbox" data-cw="'+x.id+'"'+(on?' checked':'')+' style="width:18px;height:18px;flex:0 0 auto">'+
-        '<span style="flex:1;min-width:0">'+
-          '<span class="nm">'+esc(fullName(x))+'</span>'+
-          (out?'<span class="chip c-orange" style="margin-left:6px">ยืมจาก '+esc(t.code||'ไม่มีทีม')+'</span>':'')+
-          '<div class="brow-s"><span class="tm">'+esc(x.emp_code)+'</span>'+
-            (x.phone?'<span>'+esc(x.phone)+'</span>':'')+'</div></span>'+
-        (on? '<button class="tb-btn" data-cwlead="'+x.id+'" style="flex:0 0 auto">'+
-             (CREW_PICK.lead===x.id?'★ หัวหน้าชุด':'☆ ตั้งหัวหน้า')+'</button>' : '')+
-      '</label>';
-    }).join('') : '<div class="empty"><b>ไม่พบใครที่ตรงกับที่ค้น</b></div>';
+    pool.sort(function(x,y){ return String(x.emp_code).localeCompare(String(y.emp_code)); });
+    $('ppList').innerHTML = pool.length? pool.map(function(x){
+      return '<div class="brow" data-pp="'+x.id+'" style="cursor:pointer">'+
+        '<div class="brow-t"><span class="nm">'+esc(fullName(x))+'</span></div>'+
+        '<div class="brow-s"><span class="tm">'+esc(x.emp_code)+'</span>'+
+          (x.phone?'<span>'+esc(x.phone)+'</span>':'')+'</div></div>';
+    }).join('') : '<div class="empty"><b>'+(CW.q?'ไม่พบใครที่ตรงกับที่ค้น':'ทุกคนอยู่ในงานนี้แล้ว')+'</b></div>';
 
-    $('cwList').querySelectorAll('[data-cw]').forEach(function(cb){
-      cb.onchange=function(){
-        var id=cb.dataset.cw, i=CREW_PICK.ids.indexOf(id);
-        if(cb.checked){ if(i<0) CREW_PICK.ids.push(id); }
-        else { if(i>=0) CREW_PICK.ids.splice(i,1); if(CREW_PICK.lead===id) CREW_PICK.lead=null; }
-        draw();
-      };
-    });
-    $('cwList').querySelectorAll('[data-cwlead]').forEach(function(b){
-      b.onclick=function(e){
-        e.preventDefault(); e.stopPropagation();
-        CREW_PICK.lead = (CREW_PICK.lead===b.dataset.cwlead)? null : b.dataset.cwlead;
+    $('ppList').querySelectorAll('[data-pp]').forEach(function(r){
+      r.onclick=async function(){
+        var id=r.dataset.pp;
+        var ins=await db.from('it_assignment_crew').insert({
+          assignment_id:CW.a.id, subteam_id:CW.target, staff_id:id, added_by:meName()});
+        if(ins.error) return toast('เพิ่มไม่สำเร็จ: '+ins.error.message,4500);
+        already.push(id);
+        await loadCrew([CW.a.id]);
+        toast(fullName(staffOf(id))+' เข้าทีมย่อยแล้ว',2200);
         draw();
       };
     });
   };
   draw();
-  $('cwQ').oninput=function(){ CREW_PICK.q=this.value.trim().toLowerCase(); draw(); };
+  $('ppQ').oninput=function(){ CW.q=this.value.trim().toLowerCase(); draw(); };
+}
 
-  $('cwReset').onclick=async function(){
-    if(!confirm('ล้างรายชื่อที่จัดไว้ แล้วกลับไปใช้สมาชิกทีมประจำ?')) return;
-    this.disabled=true;
-    var r=await db.from('it_assignment_crew').delete().eq('assignment_id',a.id);
-    if(r.error){ toast('ล้างไม่สำเร็จ: '+r.error.message,4500); this.disabled=false; return; }
-    delete CREW[a.id];
-    closeSheet(); toast('กลับไปใช้สมาชิกทีมประจำแล้ว',3000); await loadMgr();
-  };
-  $('cwSave').onclick=async function(){
-    if(!CREW_PICK.ids.length) return toast('เลือกอย่างน้อย 1 คน หรือกด “ใช้ทีมประจำ”');
-    this.disabled=true;
-    var del=await db.from('it_assignment_crew').delete().eq('assignment_id',a.id);
-    if(del.error){ toast('บันทึกไม่สำเร็จ: '+del.error.message,4500); this.disabled=false; return; }
-    var rows=CREW_PICK.ids.map(function(id){
-      return {assignment_id:a.id, staff_id:id, is_lead:(CREW_PICK.lead===id), added_by:meName()};
+/* ── ตั้งค่ารายการหน้าที่ ── */
+function dutySheet(after){
+  var draw=function(){
+    var ds=(S.duties||[]).slice().sort(function(a,b){ return a.sort-b.sort; });
+    $('dtList').innerHTML = ds.length? ds.map(function(d){
+      return '<div class="brow" style="cursor:default;display:flex;align-items:center;gap:9px">'+
+        '<input class="mt-q" data-dtn="'+d.id+'" value="'+esc(d.label)+'" style="flex:1;padding:6px 9px">'+
+        '<label style="font-size:11.5px;display:flex;align-items:center;gap:5px">'+
+          '<input type="checkbox" data-dta="'+d.id+'"'+(d.active!==false?' checked':'')+'> ใช้งาน</label>'+
+        '<button class="tb-btn" data-dtd="'+d.id+'">🗑</button></div>';
+    }).join('') : '<div class="empty"><b>ยังไม่มีรายการหน้าที่</b></div>';
+
+    $('dtList').querySelectorAll('[data-dtn]').forEach(function(el){
+      el.onchange=async function(){
+        var r=await db.from('it_duties').update({label:el.value.trim()}).eq('id',el.dataset.dtn);
+        if(r.error) return toast('บันทึกไม่สำเร็จ: '+r.error.message,4000);
+        await loadDuties(); draw();
+      };
     });
-    var ins=await db.from('it_assignment_crew').insert(rows);
-    if(ins.error){ toast('บันทึกไม่สำเร็จ: '+ins.error.message,4500); this.disabled=false; return; }
-    await loadCrew([a.id]);
-    closeSheet(); toast('บันทึกรายชื่อ '+rows.length+' คนแล้ว',3200); await loadMgr();
+    $('dtList').querySelectorAll('[data-dta]').forEach(function(cb){
+      cb.onchange=async function(){
+        await db.from('it_duties').update({active:cb.checked}).eq('id',cb.dataset.dta);
+        await loadDuties(); draw();
+      };
+    });
+    $('dtList').querySelectorAll('[data-dtd]').forEach(function(b){
+      b.onclick=async function(){
+        if(!confirm('ลบหน้าที่นี้? คนที่ถูกตั้งหน้าที่นี้ไว้จะกลายเป็น “ยังไม่ระบุ”')) return;
+        var r=await db.from('it_duties').delete().eq('id',b.dataset.dtd);
+        if(r.error) return toast('ลบไม่สำเร็จ: '+r.error.message,4000);
+        await loadDuties(); draw();
+      };
+    });
   };
+  sheet('รายการหน้าที่',
+    '<p style="font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:12px">'+
+      'รายการนี้จะขึ้นเป็นตัวเลือกตอนจัดคนเข้าทีมย่อย เพิ่มหรือแก้ได้ตามงานจริง</p>'+
+    '<div id="dtList" style="border:1px solid var(--border);border-radius:11px;margin-bottom:12px"></div>'+
+    '<div class="fld"><label>เพิ่มหน้าที่ใหม่</label>'+
+      '<input id="dtNew" placeholder="เช่น Safety, Supervisor, คนขับรถ"></div>',
+    '<div class="row"><button class="btn ghost" id="dtAdd">＋ เพิ่ม</button>'+
+      '<button class="btn" id="dtDone">เสร็จแล้ว</button></div>');
+  draw();
+  $('dtAdd').onclick=async function(){
+    var v=$('dtNew').value.trim(); if(!v) return toast('พิมพ์ชื่อหน้าที่ก่อน');
+    var mx=(S.duties||[]).reduce(function(m,d){ return Math.max(m,d.sort||0); },0);
+    var r=await db.from('it_duties').insert({label:v, sort:mx+10});
+    if(r.error) return toast(/duplicate|unique/i.test(r.error.message)?'มีหน้าที่ชื่อนี้แล้ว':('เพิ่มไม่สำเร็จ: '+r.error.message),4000);
+    $('dtNew').value=''; await loadDuties(); draw();
+  };
+  $('dtDone').onclick=function(){ closeSheet(); if(after) after(); };
+}
+
+async function loadDuties(){
+  try{
+    var r=await db.from('it_duties').select('*').order('sort');
+    if(!r.error) S.duties=r.data||[];
+  }catch(e){}
 }
 
 /* ═════ พิมพ์รายชื่อคนเข้าหน้างาน — เอาไปกรอกฟอร์มขออนุญาตเข้าไซต์ ═════ */
@@ -2831,22 +2985,32 @@ function printCrew(list){
   if(!list.length) return toast('ไม่มีงานให้พิมพ์รายชื่อ');
   var rows='', total=0;
   list.forEach(function(a){
-    var si=siteOf(a.site_id), tm=teamOf(a.team_id), crew=crewOf(a);
-    total+=crew.length;
+    var si=siteOf(a.site_id), tm=teamOf(a.team_id), subs=subsOf(a);
+    var flat=crewFlat(a); total+=flat.length;
     rows+='<div class="job">'+
       '<div class="jh"><b>'+esc(si.name||'—')+'</b> <span class="c">'+esc(si.code||'')+'</span>'+
-        '<span class="c"> · '+esc(tm.code||'')+' '+esc(tm.name||'')+' · '+dayText(a.work_date)+'</span>'+
-        (crewIsCustom(a)?'':'<span class="c"> · (ตามทีมประจำ)</span>')+'</div>'+
-      (si.address? '<div class="ad">'+esc(si.address)+'</div>':'')+
-      '<table><thead><tr><th style="width:34px">#</th><th>คำนำหน้า</th><th>ชื่อ–สกุล</th>'+
-        '<th style="width:110px">รหัสพนักงาน</th><th style="width:120px">เบอร์โทร</th>'+
-        '<th style="width:90px">หน้าที่</th><th style="width:150px">ลายเซ็น</th></tr></thead><tbody>'+
-      (crew.length? crew.map(function(c,i){
-        return '<tr><td>'+(i+1)+'</td><td>'+esc(c.title||'')+'</td><td>'+esc(c.name||c.emp_code||'')+'</td>'+
-          '<td class="m">'+esc(c.emp_code||'')+'</td><td class="m">'+esc(c.phone||'')+'</td>'+
-          '<td>'+(c.is_lead?'หัวหน้าชุด':'ช่าง')+'</td><td></td></tr>';
-      }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888">ยังไม่มีคนในทีมนี้ — จัดคนเข้าทีมก่อน</td></tr>')+
-      '</tbody></table></div>';
+        '<span class="c"> · '+esc(tm.code||'')+' '+esc(tm.name||'')+' · '+dayText(a.work_date)+
+        ' · '+flat.length+' คน</span></div>'+
+      (si.address? '<div class="ad">'+esc(si.address)+'</div>':'');
+    if(!flat.length){
+      rows+='<div class="ad" style="color:#a00">ยังไม่ได้จัดคนสำหรับงานนี้</div></div>';
+      return;
+    }
+    var byS={}, order=[];
+    flat.forEach(function(c){ if(!byS[c.sub]){ byS[c.sub]=[]; order.push(c.sub); } byS[c.sub].push(c); });
+    order.forEach(function(sn){
+      rows+='<div class="sub">'+esc(sn)+' <span class="c">'+byS[sn].length+' คน</span></div>'+
+        '<table><thead><tr><th style="width:32px">#</th><th style="width:70px">คำนำหน้า</th><th>ชื่อ–สกุล</th>'+
+        '<th style="width:100px">รหัสพนักงาน</th><th style="width:110px">เบอร์โทร</th>'+
+        '<th style="width:120px">หน้าที่</th><th style="width:130px">ลายเซ็น</th></tr></thead><tbody>'+
+        byS[sn].map(function(c,i){
+          return '<tr><td>'+(i+1)+'</td><td>'+esc(c.title)+'</td><td>'+esc(c.name)+
+            (c.lead?' <b>(หัวหน้าชุด)</b>':'')+'</td>'+
+            '<td class="m">'+esc(c.emp)+'</td><td class="m">'+esc(c.phone)+'</td>'+
+            '<td>'+esc(c.duty||'—')+'</td><td></td></tr>';
+        }).join('')+'</tbody></table>';
+    });
+    rows+='</div>';
   });
 
   var w=window.open('','_blank');
@@ -2858,12 +3022,14 @@ function printCrew(list){
     '*{box-sizing:border-box}body{font-family:Sarabun,sans-serif;margin:0;padding:22px;color:#111;font-size:12px}'+
     '.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:9px;margin-bottom:14px}'+
     '.hd h1{font-size:17px;margin:0}.meta{font-size:10.5px;color:#555;text-align:right;line-height:1.6}'+
-    '.job{margin-bottom:18px;page-break-inside:avoid}'+
+    '.job{margin-bottom:20px;page-break-inside:avoid}'+
     '.jh{font-size:13px;margin-bottom:3px}.jh .c{color:#666;font-weight:400;font-size:11.5px}'+
     '.ad{font-size:11px;color:#666;margin-bottom:6px}'+
-    'table{width:100%;border-collapse:collapse}'+
+    '.sub{font-size:12px;font-weight:600;background:#eee;padding:4px 8px;margin:9px 0 0;border-left:3px solid #555}'+
+    '.sub .c{color:#666;font-weight:400}'+
+    'table{width:100%;border-collapse:collapse;margin-bottom:4px}'+
     'th,td{border:1px solid #bbb;padding:5px 7px;text-align:left}'+
-    'th{background:#f0f0f0;font-size:11px;font-weight:600}'+
+    'th{background:#f6f6f6;font-size:11px;font-weight:600}'+
     'td{height:26px}.m{font-family:Menlo,monospace;font-size:11px}'+
     '.sign{margin-top:26px;display:flex;gap:40px;font-size:11.5px}'+
     '.sign div{flex:1;border-top:1px solid #111;padding-top:5px;text-align:center;color:#555}'+
@@ -2886,19 +3052,18 @@ function exportCrew(list, label){
   var rows=[];
   list.forEach(function(a){
     var si=siteOf(a.site_id), tm=teamOf(a.team_id);
-    crewOf(a).forEach(function(c,i){
+    crewFlat(a).forEach(function(c,i){
       rows.push({
         วันที่:a.work_date, วัน:DW_TH[new Date(a.work_date+'T00:00:00').getDay()],
         รหัสงาน:si.code||'', ไซต์งาน:si.name||'', ลูกค้า:si.customer||'', ที่อยู่:si.address||'',
-        รหัสทีม:tm.code||'', ทีม:tm.name||'',
-        ลำดับ:i+1, คำนำหน้า:c.title||'', 'ชื่อ-สกุล':c.name||'',
-        รหัสพนักงาน:c.emp_code||'', เบอร์โทร:c.phone||'',
-        หน้าที่:c.is_lead?'หัวหน้าชุด':'ช่าง',
-        หมายเหตุ:c.note||'', ที่มา:crewIsCustom(a)?'จัดชุดเอง':'ทีมประจำ'
+        รหัสทีม:tm.code||'', ทีม:tm.name||'', ทีมย่อย:c.sub,
+        ลำดับ:i+1, คำนำหน้า:c.title, 'ชื่อ-สกุล':c.name,
+        รหัสพนักงาน:c.emp, เบอร์โทร:c.phone,
+        หน้าที่:c.duty||'', หัวหน้าชุด:c.lead?'ใช่':'', หมายเหตุ:c.note
       });
     });
   });
-  if(!rows.length) return toast('ไม่มีรายชื่อให้ Export');
+  if(!rows.length) return toast('ไม่มีรายชื่อให้ Export — จัดคนเข้าทีมย่อยก่อน');
   csv('รายชื่อเข้าหน้างาน_'+(label||todayISO()), rows);
 }
 
@@ -3144,9 +3309,10 @@ function exportSchedule(){
           รหัสงาน:si.code||'', ไซต์งาน:si.name||'', หมวดไซต์:si.category||'', ลูกค้า:si.customer||'',
           ที่อยู่:si.address||'', ขอบเขตงาน:a.scope||'',
           สถานะ:st.l, คืบหน้า:pct(a.progress)+'%',
-          คนเข้างาน:crewOf(a).length,
-          รายชื่อคนเข้างาน:crewOf(a).map(function(c){ return fullName(c); }).join(' / '),
-          จัดชุดเอง:crewIsCustom(a)?'ใช่':'ตามทีมประจำ',
+          ทีมย่อย:subsOf(a).length,
+          คนเข้างาน:crewCount(a),
+          รายชื่อคนเข้างาน:crewFlat(a).map(function(c){
+            return (c.title||'')+c.name+(c.duty?(' ['+c.duty+']'):''); }).join(' / '),
           เช็กลิสต์:ck.filter(function(c){return c.done;}).length+'/'+ck.length,
           เช็คอิน:a.checkin_at?fmtDT(a.checkin_at):'',
           ระยะถนนกม:a.checkin_road_m!=null?(a.checkin_road_m/1000).toFixed(1):''
@@ -3454,7 +3620,11 @@ function quickAssign(teamId, date){
     closeSheet();
     toast(rows.length>1? ('มอบหมายแล้ว '+rows.length+' วัน · '+dayText(ds[0])+' – '+dayText(ds[ds.length-1]))
                        : 'มอบหมายงานแล้ว', 3600);
-    loadMgr();
+    await loadMgr();
+    /* พาไปจัดทีมย่อยต่อเลย เพราะงานที่ยังไม่มีคนคือข้อมูลที่ยังใช้ไม่ได้ */
+    var made=(S.plan||[]).filter(function(x){
+      return x.team_id===teamId && x.work_date===ds[0]; })[0];
+    if(made) crewSheet(made);
   };
 }
 
