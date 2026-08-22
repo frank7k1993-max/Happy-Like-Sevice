@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<title>Real-Time Plan — ติดตามทีมติดตั้ง-QA</title>
+<title>Happy Like Service — แผนงาน</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -415,9 +415,10 @@ body.preview #previewBar{display:flex}
   font-family:-apple-system,'Sarabun',BlinkMacSystemFont,sans-serif;
   font-weight:700;letter-spacing:-.03em;line-height:1;color:var(--text)}
 .wordmark b{font-weight:700;color:var(--accent)}
-.wordmark.xl{font-size:38px}
-.wordmark.lg{font-size:27px}
-.wordmark.md{font-size:20px}
+/* ย่อตามความกว้างจอ กันชื่อยาวล้นขอบบนมือถือเครื่องเล็ก */
+.wordmark.xl{font-size:clamp(25px,7.6vw,38px)}
+.wordmark.lg{font-size:clamp(19px,5.6vw,26px)}
+.wordmark.md{font-size:clamp(16px,4.6vw,20px)}
 .wordmark.sm{font-size:14px;letter-spacing:-.02em}
 #splash{position:fixed;inset:0;z-index:99999;background:#fff;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -450,8 +451,8 @@ body.preview #previewBar{display:flex}
 </head>
 <body>
 <div id="splash">
-  <div class="splash-logo"><div class="wordmark xl">Real-Time <b>Plan</b></div></div>
-  <div class="splash-sub">ติดตามทีมติดตั้ง-QA หน้างาน &middot; <span class="ver"></span></div>
+  <div class="splash-logo"><div class="wordmark xl">Happy Like <b>Service</b></div></div>
+  <div class="splash-sub">แผนงาน &middot; <span class="ver"></span></div>
   <div class="splash-bar"><div class="splash-bar-fill"></div></div>
   <div class="splash-dots"><span></span><span></span><span></span></div>
   <div id="splashErr"></div>
@@ -459,7 +460,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='6.3';
+window.APP_VER='6.6';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -979,9 +980,9 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
 <!-- ══════════ LOGIN ══════════ -->
 <div id="login">
   <div class="lg-card">
-    <h1><span class="wordmark lg">Real-Time <b>Plan</b></span>
+    <h1><span class="wordmark lg">Happy Like <b>Service</b></span>
       <span class="ver" style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-left:4px"></span></h1>
-    <p class="sub">ติดตามทีมติดตั้ง-QA หน้างาน · รายงานความคืบหน้าและปัญหาแบบเรียลไทม์</p>
+    <p class="sub">แผนงาน</p>
 
     <div id="lgErr" class="lg-err hide"></div>
 
@@ -1004,7 +1005,7 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
 <!-- ══════════ MANAGER ══════════ -->
 <div id="mgr" class="hide">
   <div class="tb">
-    <div class="tb-title"><span class="wordmark sm">Real-Time <b>Plan</b></span> <span class="v ver"></span> <span class="v" id="mgrWho"></span></div>
+    <div class="tb-title"><span class="wordmark sm">Happy Like <b>Service</b></span> <span class="v ver"></span> <span class="v" id="mgrWho"></span></div>
     <input type="date" id="dtPick" class="tin" style="height:28px;padding:4px 9px">
     <button class="tb-btn" id="btnToday">วันนี้</button>
     <div class="tb-live"><span class="tb-dot" id="liveDot"></span><span id="liveTxt">กำลังเชื่อมต่อ…</span></div>
@@ -1137,12 +1138,14 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
   <div class="pane" id="pTm">
     <div style="padding:12px 14px 14px">
       <div class="card">
-        <div class="card-h"><span>ทีมติดตั้ง</span><button class="tb-btn" id="btnAddTeam">+ เพิ่มทีม</button></div>
+        <!-- ★ ชื่อหัวข้อ — แก้คำในแท็ก <span> ด้านล่างได้ตามต้องการ -->
+        <div class="card-h"><span>ทีมงาน</span><button class="tb-btn" id="btnAddTeam">+ เพิ่มทีม</button></div>
         <div id="teamList" style="max-height:340px;overflow:auto"></div>
       </div>
     </div>
     <div style="padding:0 14px 16px">
       <div class="card">
+        <!-- ★ ชื่อหัวข้อ — แก้คำในแท็ก <span> ด้านล่างได้ตามต้องการ -->
         <div class="card-h"><span>พนักงาน · จัดคนเข้าทีม · สิทธิ์การใช้งาน</span>
           <span id="staffNote" style="text-transform:none;letter-spacing:0;font-weight:500">—</span></div>
         <div id="staffList" style="max-height:460px;overflow:auto"></div>
@@ -1213,7 +1216,7 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* =====================================================================
-   Real-Time Plan — ติดตามทีมติดตั้ง-QA หลายทีม หลายหน้างาน (เวอร์ชันอยู่ที่ window.APP_VER)
+   Happy Like Service — แผนงาน ติดตามทีมติดตั้ง-QA หลายทีม หลายหน้างาน (เวอร์ชันอยู่ที่ window.APP_VER)
    ใช้ Supabase project เดียวกับ production_v2.html (ตาราง it_*)
    ===================================================================== */
 /* ค่าเชื่อมต่อมาจากตัวเลือกโปรเจกต์ด้านบน (window.SBCFG) — ไม่มีค่าฝังไว้ในไฟล์แล้ว
@@ -1532,6 +1535,11 @@ function applyRoleUI(){
   set('pnShift',  rank(S.me)>=1);               /* เลื่อนงานยกชุด — แอดมินขึ้นไป */
   set('geoWrap',  rank(S.me)>=2);               /* ตรวจตำแหน่งเช็คอิน — ผู้จัดการขึ้นไป */
   set('btnHelp',  !isOwner(S.me));              /* คู่มือ — ซ่อนของระดับสูงสุด */
+  /* เครื่องมือระดับระบบ — เฉพาะผู้ควบคุมระบบเท่านั้น
+     ฐานข้อมูล: สลับโปรเจกต์ได้ ถ้าคนอื่นกดเล่นแล้วเปลี่ยน ทั้งเครื่องจะหลุดไปอีกฐานข้อมูล
+     ตรวจระบบ: เปิดเผย URL โปรเจกต์ ชื่อตาราง และสถานะสิทธิ์ ไม่ควรให้ระดับอื่นเห็น */
+  set('btnDb',    isSuper(S.me));
+  set('btnDiag',  isSuper(S.me));
 }
 function isAdmin(u){ return rank(u)>=2; }
 function isOwner(u){ return rank(u)>=3; }
@@ -2680,7 +2688,7 @@ function printReport(){
     '.sig .role{font-weight:700;font-size:10.5px}'+
     '.sig .date{color:#666;font-size:9.5px;margin-top:3px}'+
     '</style></head><body>'+
-    '<div class="hd"><div><h1>รายงานสรุปงานติดตั้ง — Real-Time Plan</h1>'+
+    '<div class="hd"><div><h1>รายงานสรุปงานติดตั้ง — Happy Like Service</h1>'+
       '<div class="p">'+esc(period)+'</div></div>'+
       '<div class="meta">พิมพ์เมื่อ '+fmtDT(new Date().toISOString())+'<br>โดย '+esc(meName())+'</div></div>'+
 
@@ -2814,7 +2822,7 @@ function printSchedule(){
     '.sig .date{color:#666;font-size:9.5px;margin-top:3px}'+
     '@media print{.noprint{display:none}}'+
     '</style></head><body>'+
-    '<div class="hd"><div><h1>แผนงานติดตั้ง — Real-Time Plan</h1>'+
+    '<div class="hd"><div><h1>แผนงานติดตั้ง — Happy Like Service</h1>'+
       '<div class="p">'+esc(period)+' · '+teams.length+' ทีม · '+total+' งาน'+
         (S.pnTeam? (' · เฉพาะทีม '+esc((teamOf(S.pnTeam).name)||'')) : '')+
         (S.pnQ? (' · ค้นหา “'+esc(S.pnQ)+'”') : '')+'</div></div>'+
@@ -4112,11 +4120,13 @@ function myAccount(){
     '<p style="font-size:11.5px;color:var(--text2);line-height:1.6;margin-bottom:9px">จำบัญชีไว้ '+usersGet().length+
       ' รายการ สำหรับแตะเข้าใช้งานเร็ว — ถ้าจะส่งเครื่องให้คนอื่นควรล้างทิ้งก่อน</p>'+
     '<button class="btn ghost sm" onclick="forgetAll()">ล้างรายชื่อบัญชีในเครื่องนี้</button>'+
-    '<div class="sec-h" style="margin-top:18px">ฐานข้อมูลที่เชื่อมต่ออยู่</div>'+
-    '<p style="font-size:11.5px;color:var(--text2);line-height:1.6;margin-bottom:9px">'+
-      esc(SB_NAME)+' · <span style="font-family:var(--mono)">'+esc(SB_URL.replace('https://',''))+'</span><br>'+
-      'เปลี่ยนโปรเจกต์แล้วต้องล็อกอินใหม่ เพราะบัญชีผูกอยู่กับฐานข้อมูลนั้น</p>'+
-    '<button class="btn ghost sm" onclick="openSbPicker()">🗄 เลือก / เปลี่ยนโปรเจกต์ฐานข้อมูล</button>',
+    (isSuper(S.me)
+      ? '<div class="sec-h" style="margin-top:18px">ฐานข้อมูลที่เชื่อมต่ออยู่</div>'+
+        '<p style="font-size:11.5px;color:var(--text2);line-height:1.6;margin-bottom:9px">'+
+          esc(SB_NAME)+' · <span style="font-family:var(--mono)">'+esc(SB_URL.replace('https://',''))+'</span><br>'+
+          'เปลี่ยนโปรเจกต์แล้วต้องล็อกอินใหม่ เพราะบัญชีผูกอยู่กับฐานข้อมูลนั้น</p>'+
+        '<button class="btn ghost sm" onclick="openSbPicker()">🗄 เลือก / เปลี่ยนโปรเจกต์ฐานข้อมูล</button>'
+      : ''),
     '<button class="btn sm" id="m_save">บันทึก</button>');
 
   $('m_save').onclick=async function(){
@@ -5739,7 +5749,7 @@ function renderMe(){
     '<div class="mpad" style="margin-top:8px"><button class="bigbtn" id="bEdit">✏️ แก้ไขชื่อ / เบอร์ / PIN</button></div>'+
     '<div class="mpad" style="margin-top:-4px"><button class="bigbtn" style="background:var(--s3);color:var(--text);box-shadow:none" id="bOut">ออกจากระบบ</button></div>'+
     '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 0 26px">'+
-      '<div class="wordmark md">Real-Time <b>Plan</b></div>'+
+      '<div class="wordmark md">Happy Like <b>Service</b></div>'+
       '<p style="font-size:10.5px;color:var(--text3);letter-spacing:1px">v'+window.APP_VER+'</p></div>';
   if($('vtTeam')) $('vtTeam').onchange=function(){ S.asTeam=this.value; S.tJob=null; loadTeamData(); toast('สลับไปทีม '+(teamOf(this.value).name||'')); };
   if($('vtDash')) $('vtDash').onclick=goDash;
