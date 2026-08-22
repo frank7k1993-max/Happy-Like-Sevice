@@ -519,7 +519,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='8.4';
+window.APP_VER='8.5';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1187,7 +1187,7 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
           <div style="flex:1;min-width:190px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">ไซต์</label><select id="asgSite" class="tin" style="width:100%"></select></div>
           <div style="flex:1;min-width:150px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">ทีม</label><select id="asgTeam" class="tin" style="width:100%"></select></div>
           <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เริ่มวันที่</label><input type="date" id="asgDate" class="tin"></div>
-          <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เวลานัดเข้างาน</label><input type="time" id="asgTime" class="tin" style="width:110px"></div>
+          <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px" id="asgTimeL">เวลานัด</label><input type="time" id="asgTime" class="tin" style="width:110px"></div>
           <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">กี่วัน</label>
             <select id="asgDays" class="tin"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="12">12</option><option value="14">14</option></select></div>
           <input type="hidden" id="asgSkipSun">
@@ -1475,15 +1475,30 @@ function timeToMin(t){
   var m=/^(\d{1,2}):(\d{2})/.exec(String(t));
   return m? (+m[1]*60 + +m[2]) : null;
 }
-/* เวลาที่ควรออก = เวลานัด − เวลาเดินทางช้าสุด − เวลาเผื่อ */
+/* เวลาที่กรอกในแผนงานหมายถึงอะไร — แต่ละบริษัทนัดกันคนละแบบ
+   depart = นัดเวลาออกจากบริษัท แล้วระบบคำนวณว่าจะถึงหน้างานกี่โมง  ← ค่าเริ่มต้น
+   arrive = นัดเวลาที่ต้องถึงหน้างาน แล้วระบบถอยหลังบอกว่าต้องออกกี่โมง
+   สลับได้ที่ ⚙️ ตั้งค่าการเดินทาง */
+function timeMode(){
+  return ((S.settings||{}).time_mode==='arrive') ? 'arrive' : 'depart';
+}
+function timeLabel(){
+  return timeMode()==='arrive' ? 'เวลานัดถึงหน้างาน' : 'เวลานัดออกเดินทาง';
+}
 function departPlan(a){
-  var s=siteOf(a.site_id), tv=travelTo(s), arr=timeToMin(a.start_time);
+  var s=siteOf(a.site_id), tv=travelTo(s), t=timeToMin(a.start_time);
   if(!tv) return null;
   var buf=setNum('buffer_min',30);
-  var out={tv:tv, arrive:arr, buffer:buf};
-  if(arr!=null){
-    out.leave     = arr - tv.minSlow - buf;          /* ออกตามนี้ปลอดภัยที่สุด */
-    out.leaveFast = arr - tv.minFast - buf;          /* ถ้ารถโล่งจริง ๆ */
+  var out={tv:tv, buffer:buf, mode:timeMode(), t:t};
+  if(t==null) return out;
+  if(out.mode==='depart'){
+    out.leave      = t;                              /* ออกตามที่นัดไว้ */
+    out.arriveSlow = t + tv.minSlow;                 /* รถติดสุด ๆ ถึงเท่านี้ */
+    out.arriveFast = t + tv.minFast;                 /* รถโล่งถึงเท่านี้ */
+  }else{
+    out.arrive     = t;                              /* ต้องถึงหน้างานตามนี้ */
+    out.leave      = t - tv.minSlow - buf;           /* ออกตามนี้ปลอดภัยที่สุด */
+    out.leaveFast  = t - tv.minFast - buf;
   }
   return out;
 }
@@ -1491,7 +1506,10 @@ function travelText(a){
   var d=departPlan(a);
   if(!d) return '';
   var t='🚗 '+d.tv.km.toFixed(1)+' กม. · '+d.tv.minFast+'–'+d.tv.minSlow+' นาที';
-  if(d.leave!=null) t+=' · ออก '+hhmm(d.leave)+' น.';
+  if(d.mode==='depart' && d.leave!=null)
+    t+=' · ออก '+hhmm(d.leave)+' → ถึง '+hhmm(d.arriveFast)+'–'+hhmm(d.arriveSlow)+' น.';
+  else if(d.leave!=null)
+    t+=' · ออก '+hhmm(d.leave)+' → ถึง '+hhmm(d.arrive)+' น.';
   return t;
 }
 
@@ -1662,6 +1680,7 @@ function applyRoleUI(){
   /* เครื่องมือระดับระบบ — เฉพาะผู้ควบคุมระบบเท่านั้น
      ฐานข้อมูล: สลับโปรเจกต์ได้ ถ้าคนอื่นกดเล่นแล้วเปลี่ยน ทั้งเครื่องจะหลุดไปอีกฐานข้อมูล
      ตรวจระบบ: เปิดเผย URL โปรเจกต์ ชื่อตาราง และสถานะสิทธิ์ ไม่ควรให้ระดับอื่นเห็น */
+  var atl=$('asgTimeL'); if(atl) atl.textContent=timeLabel();
   set('btnDb',    isSuper(S.me));
   set('btnDiag',  isSuper(S.me));
 }
@@ -2981,7 +3000,7 @@ async function crewSheet(a){
       '<b>'+esc(si.name||'—')+'</b> <span style="color:var(--text3)">'+esc(si.code||'')+'</span>'+
       ' <span style="color:var(--text2)">· '+esc(tm.code||'')+' '+esc(tm.name||'')+' · '+dayText(a.work_date)+'</span>'+
       '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:9px">'+
-        '<label style="font-size:12px;color:var(--text2)">เวลานัดเข้างาน</label>'+
+        '<label style="font-size:12px;color:var(--text2)">'+timeLabel()+'</label>'+
         '<input type="time" class="tin" id="cwTime" value="'+esc(String(a.start_time||'').slice(0,5))+'" style="width:120px">'+
         '<span id="cwTrip" style="font-size:12px;color:var(--accent);font-weight:600"></span>'+
       '</div></div>'+
@@ -3254,8 +3273,16 @@ async function regGuard(){
 function tripSettings(){
   var g=function(k,d){ return setNum(k,d); };
   sheet('ตั้งค่าการเดินทาง',
+    '<div class="sec-h">เวลาที่กรอกในแผนงานหมายถึงอะไร</div>'+
+    '<div class="row" style="margin-bottom:10px">'+
+      '<button class="opt'+(timeMode()==='depart'?' on':'')+'" data-tm="depart" style="text-align:center">'+
+        '🚐 เวลาออกจากบริษัท</button>'+
+      '<button class="opt'+(timeMode()==='arrive'?' on':'')+'" data-tm="arrive" style="text-align:center">'+
+        '⏰ เวลาที่ต้องถึงหน้างาน</button>'+
+    '</div>'+
+    '<div id="tm_hint" style="background:var(--s1);border:1px solid var(--border);border-radius:11px;'+
+      'padding:10px 12px;font-size:12px;line-height:1.65;color:var(--text2);margin-bottom:14px"></div>'+
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.7;margin-bottom:14px">'+
-      'ใช้คำนวณว่าต้องออกจากจุดออกเดินทางกี่โมงถึงจะถึงหน้างานทันเวลานัด<br>'+
       'ระบบวัดระยะเส้นตรงแล้วคูณด้วยตัวคูณถนน เพราะถนนจริงอ้อมกว่าเส้นบนแผนที่</p>'+
     '<div class="row">'+
       '<div class="fld"><label>ความเร็วช้าสุด (กม./ชม.)</label>'+
@@ -3277,21 +3304,34 @@ function tripSettings(){
       'padding:11px 13px;font-size:12.5px;line-height:1.7;color:var(--text2)"></div>',
     '<button class="btn sm" id="ts_save">บันทึก</button>');
 
+  var mode=timeMode();
   var prev=function(){
     var slow=+$('ts_slow').value||80, fast=+$('ts_fast').value||100,
         rf=+$('ts_rf').value||1.3, buf=+$('ts_buf').value||0;
-    var km=30*rf;
+    var km=30*rf, mS=Math.ceil(km/slow*60), mF=Math.ceil(km/fast*60);
+    $('tm_hint').innerHTML = mode==='depart'
+      ? 'กรอก <b>04:30</b> = ทีมออกจากบริษัทตอน 04:30 ระบบจะบอกว่าจะถึงหน้างานราวกี่โมง'
+      : 'กรอก <b>07:00</b> = ต้องถึงหน้างานตอน 07:00 ระบบจะถอยหลังบอกว่าต้องออกจากบริษัทกี่โมง';
+    $('ts_buf').closest('.fld').style.opacity = mode==='depart'? '.45' : '1';
     $('ts_prev').innerHTML='ตัวอย่าง: ไซต์ที่ห่างเส้นตรง 30 กม. → ถนนราว <b>'+km.toFixed(1)+' กม.</b><br>'+
-      'เดินทาง '+Math.ceil(km/fast*60)+'–'+Math.ceil(km/slow*60)+' นาที<br>'+
-      'ถ้านัด 07:00 น. ควรออกไม่เกิน <b style="color:var(--accent)">'+
-      hhmm(7*60 - Math.ceil(km/slow*60) - buf)+' น.</b>';
+      'เดินทาง '+mF+'–'+mS+' นาที<br>'+
+      (mode==='depart'
+        ? 'ออก 04:30 น. → ถึงหน้างานราว <b style="color:var(--accent)">'+hhmm(4*60+30+mF)+'–'+hhmm(4*60+30+mS)+' น.</b>'
+        : 'ต้องถึง 07:00 น. → ออกไม่เกิน <b style="color:var(--accent)">'+hhmm(7*60-mS-buf)+' น.</b>');
   };
   prev();
   ['ts_slow','ts_fast','ts_rf','ts_buf'].forEach(function(id){ $(id).oninput=prev; });
+  $('shB').querySelectorAll('[data-tm]').forEach(function(b){
+    b.onclick=function(){
+      mode=b.dataset.tm;
+      $('shB').querySelectorAll('[data-tm]').forEach(function(o){ o.classList.toggle('on', o.dataset.tm===mode); });
+      prev();
+    };
+  });
 
   $('ts_save').onclick=async function(){
     var vals={speed_slow_kmh:$('ts_slow').value, speed_fast_kmh:$('ts_fast').value,
-              road_factor:$('ts_rf').value, buffer_min:$('ts_buf').value};
+              road_factor:$('ts_rf').value, buffer_min:$('ts_buf').value, time_mode:mode};
     if(+vals.speed_fast_kmh < +vals.speed_slow_kmh) return toast('ความเร็วเร็วสุดต้องไม่น้อยกว่าช้าสุด');
     this.disabled=true;
     var keys=Object.keys(vals);
@@ -3317,11 +3357,15 @@ function drawTrip(){
     return;
   }
   if(!d){ el.textContent=''; return; }
-  el.innerHTML='🚗 '+d.tv.km.toFixed(1)+' กม. · เดินทาง '+d.tv.minFast+'–'+d.tv.minSlow+' นาที'+
-    (d.leave!=null
-      ? ' → <b>ออกไม่เกิน '+hhmm(d.leave)+' น.</b> <span style="font-weight:400;color:var(--text3)">'+
-        '(เผื่อ '+d.buffer+' นาที · รถโล่งออก '+hhmm(d.leaveFast)+' ก็ทัน)</span>'
-      : ' <span style="font-weight:400;color:var(--text3)">— ใส่เวลานัดเพื่อคำนวณเวลาออก</span>');
+  var base='🚗 '+d.tv.km.toFixed(1)+' กม. · เดินทาง '+d.tv.minFast+'–'+d.tv.minSlow+' นาที';
+  if(d.leave==null){
+    el.innerHTML=base+' <span style="font-weight:400;color:var(--text3)">— ใส่เวลาเพื่อคำนวณ</span>';
+  }else if(d.mode==='depart'){
+    el.innerHTML=base+' → <b>ถึงหน้างาน '+hhmm(d.arriveFast)+'–'+hhmm(d.arriveSlow)+' น.</b>';
+  }else{
+    el.innerHTML=base+' → <b>ออกไม่เกิน '+hhmm(d.leave)+' น.</b> '+
+      '<span style="font-weight:400;color:var(--text3)">(เผื่อ '+d.buffer+' นาที · รถโล่งออก '+hhmm(d.leaveFast)+' ก็ทัน)</span>';
+  }
 }
 
 function drawSubs(){
@@ -3564,11 +3608,14 @@ function printCrew(list){
       (si.address? '<div class="ad">'+esc(si.address)+'</div>':'')+
       (function(){
         var d=departPlan(a); if(!d) return '';
+        var dep = d.mode==='depart';
         return '<div class="trip">'+
-          (a.start_time? ('<b>นัดเข้างาน '+esc(String(a.start_time).slice(0,5))+' น.</b> · ') : '')+
+          (a.start_time? ('<b>'+(dep?'ออกเดินทาง ':'ต้องถึงหน้างาน ')+esc(String(a.start_time).slice(0,5))+' น.</b> · ') : '')+
           'ระยะทางจาก '+esc(d.tv.from.label||'จุดออกเดินทาง')+' '+d.tv.km.toFixed(1)+' กม. · '+
           'เดินทางราว '+d.tv.minFast+'–'+d.tv.minSlow+' นาที'+
-          (d.leave!=null? (' · <b>ออกไม่เกิน '+hhmm(d.leave)+' น.</b> (เผื่อ '+d.buffer+' นาที)') : '')+
+          (d.leave==null? ''
+            : dep? (' · <b>ถึงหน้างานราว '+hhmm(d.arriveFast)+'–'+hhmm(d.arriveSlow)+' น.</b>')
+                 : (' · <b>ออกไม่เกิน '+hhmm(d.leave)+' น.</b> (เผื่อ '+d.buffer+' นาที)'))+
         '</div>';
       })();
     if(!flat.length){
@@ -3639,7 +3686,10 @@ function exportCrew(list, label){
         รหัสงาน:si.code||'', ไซต์งาน:si.name||'', ลูกค้า:si.customer||'', ที่อยู่:si.address||'',
         รหัสทีม:tm.code||'', ทีม:tm.name||'', ทีมย่อย:c.sub,
         เวลานัด:a.start_time? String(a.start_time).slice(0,5) : '',
-        ควรออกเดินทาง:(function(){ var d=departPlan(a); return (d&&d.leave!=null)? hhmm(d.leave) : ''; })(),
+        ออกเดินทาง:(function(){ var d=departPlan(a); return (d&&d.leave!=null)? hhmm(d.leave) : ''; })(),
+        ถึงหน้างานราว:(function(){ var d=departPlan(a);
+          if(!d||d.leave==null) return '';
+          return d.mode==='depart'? (hhmm(d.arriveFast)+'–'+hhmm(d.arriveSlow)) : hhmm(d.arrive); })(),
         ลำดับ:i+1, คำนำหน้า:c.title, 'ชื่อ-สกุล':c.name,
         รหัสพนักงาน:c.emp, เบอร์โทร:c.phone,
         หน้าที่:c.duty||'', หัวหน้าชุด:c.lead?'ใช่':'', หมายเหตุ:c.note
@@ -3894,7 +3944,10 @@ function exportSchedule(){
           ที่อยู่:si.address||'', ขอบเขตงาน:a.scope||'',
           สถานะ:st.l, คืบหน้า:pct(a.progress)+'%',
           เวลานัดเข้างาน:a.start_time? String(a.start_time).slice(0,5) : '',
-          ควรออกเดินทาง:(function(){ var d=departPlan(a); return (d&&d.leave!=null)? hhmm(d.leave) : ''; })(),
+          ออกเดินทาง:(function(){ var d=departPlan(a); return (d&&d.leave!=null)? hhmm(d.leave) : ''; })(),
+        ถึงหน้างานราว:(function(){ var d=departPlan(a);
+          if(!d||d.leave==null) return '';
+          return d.mode==='depart'? (hhmm(d.arriveFast)+'–'+hhmm(d.arriveSlow)) : hhmm(d.arrive); })(),
           ระยะทางกม:(function(){ var d=departPlan(a); return d? +d.tv.km.toFixed(1) : ''; })(),
           ทีมย่อย:subsOf(a).length,
           คนเข้างาน:crewCount(a),
@@ -4119,7 +4172,7 @@ function quickAssign(teamId, date){
       '<div class="row"><select id="q_days">'+
         [1,2,3,4,5,6,7,8,9,10,12,14].map(function(n){ return '<option value="'+n+'">'+n+' วัน</option>'; }).join('')+
       '</select>'+
-      '<div style="flex:1;min-width:120px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เวลานัดเข้างาน</label>'+
+      '<div style="flex:1;min-width:120px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">'+timeLabel()+'</label>'+
         '<input type="time" id="q_time" class="tin" style="width:100%"></div>'+
       '<input type="hidden" id="q_skipsun"></div></div>'+
     '<div id="q_daylist"></div>',
@@ -6276,8 +6329,8 @@ function jobCard(a){
       '<span class="chip '+st.c+'">'+st.l+'</span></div>'+
     /* เวลานัดกับทีมย่อยคือสิ่งที่ช่างต้องรู้ก่อนกดเข้าไปดูรายละเอียด */
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:2px 0 5px">'+
-      (a.start_time? '<span class="chip c-orange" style="font-size:12px;font-weight:700">⏰ '+
-          esc(String(a.start_time).slice(0,5))+' น.</span>' : '')+
+      (a.start_time? '<span class="chip c-orange" style="font-size:12px;font-weight:700">'+
+          (timeMode()==='depart'?'🚐 ออก ':'⏰ ถึง ')+esc(String(a.start_time).slice(0,5))+' น.</span>' : '')+
       '<span class="chip c-blue">'+esc((t.code?t.code+' ':'')+(t.name||''))+'</span>'+
       (mine && mine.sub? '<span class="chip c-purple">'+esc(mine.sub)+'</span>':'')+
       (mine && mine.duty? '<span class="chip c-gray">'+esc(mine.duty)+'</span>':'')+
@@ -6311,14 +6364,20 @@ function jobBriefHTML(a){
     (mine && mine.lead? '<span class="chip c-purple" style="font-size:12px">★ หัวหน้าชุด</span>':'')+
   '</div>';
   if(a.start_time){
+    var hhm=esc(String(a.start_time).slice(0,5));
+    var dep = !d || d.mode==='depart';
     rows+='<div style="margin-top:9px;font-size:20px;font-weight:700;letter-spacing:-.02em">'+
-      '⏰ นัดเข้างาน '+esc(String(a.start_time).slice(0,5))+' น.</div>';
-    if(d && d.leave!=null)
+      (dep? ('🚐 นัดออกเดินทาง '+hhm+' น.') : ('⏰ ต้องถึงหน้างาน '+hhm+' น.'))+'</div>';
+    if(d && d.leave!=null){
       rows+='<div style="font-size:12.5px;color:var(--text2);margin-top:2px;line-height:1.5">'+
-        'ออกจาก '+esc(d.tv.from.label||'จุดออกเดินทาง')+' ไม่เกิน <b style="color:var(--accent)">'+hhmm(d.leave)+' น.</b>'+
+        (dep
+          ? ('ออกจาก '+esc(d.tv.from.label||'จุดออกเดินทาง')+' · ถึงหน้างานราว <b style="color:var(--accent)">'+
+             hhmm(d.arriveFast)+'–'+hhmm(d.arriveSlow)+' น.</b>')
+          : ('ออกจาก '+esc(d.tv.from.label||'จุดออกเดินทาง')+' ไม่เกิน <b style="color:var(--accent)">'+hhmm(d.leave)+' น.</b>'))+
         ' · ระยะทาง '+d.tv.km.toFixed(1)+' กม.</div>';
+    }
   }else{
-    rows+='<div style="margin-top:7px;font-size:12.5px;color:var(--text3)">ออฟฟิศยังไม่ได้ระบุเวลานัดเข้างาน</div>';
+    rows+='<div style="margin-top:7px;font-size:12.5px;color:var(--text3)">ออฟฟิศยังไม่ได้ระบุเวลานัด</div>';
   }
   if(!mine)
     rows+='<div style="margin-top:7px;font-size:12px;color:var(--orange)">'+
