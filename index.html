@@ -501,7 +501,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='7.4';
+window.APP_VER='7.5';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1562,10 +1562,10 @@ function rank(u){
 /* สิทธิ์ที่ไฟล์แอปเวอร์ชันนี้ยังไม่รู้จัก — เกิดตอนอัปฐานข้อมูลแล้วแต่ยังใช้ไฟล์เก่า */
 function unknownRole(u){ return !!(u && u.role && RANK[u.role]===undefined); }
 function isMgr(u){ return rank(u)>=1; }          /* เข้า Dashboard ได้ */
-/* เข้ามุมมองหน้างานได้ = ผู้จัดการขึ้นไป
-   แอดมินเข้าไม่ได้ เพราะเข้าไปแล้วเช็คอิน ส่งรายงาน หรือติ๊กเช็กลิสต์แทนช่างได้
-   ซึ่งทำให้ข้อมูลหน้างานเชื่อถือไม่ได้ */
-function canField(u){ return rank(u)>=2; }
+/* เข้ามุมมองหน้างานได้ = แอดมินขึ้นไป
+   ที่นี่แอดมินออกไปทำงานหน้างานเองด้วย จึงต้องเช็คอินและส่งรายงานในนามตัวเองได้
+   ทุกรายงานบันทึกชื่อคนส่งไว้อยู่แล้ว จึงยังตรวจสอบย้อนหลังได้ว่าใครเป็นคนส่ง */
+function canField(u){ return rank(u)>=1; }
 /* ตรวจตำแหน่งเช็คอิน — ปิดไว้เป็นค่าเริ่มต้น เปิดได้เฉพาะผู้จัดการขึ้นไป
    ปิดอยู่ = ไม่แสดงระยะห่าง จุดเช็คอินจริง หรือเส้นทาง ทั้งบนแผนที่ ในตาราง และใน Export */
 function geoOn(){ return !!S.geoCheck && rank(S.me)>=2; }
@@ -5089,7 +5089,7 @@ function staffForm(id){
       role: mayRole? $('p_role').value : x.role,
       approved: (isSelf? true : $('p_ok').checked),
       active: (isSelf || (x.role==='super' && !isSuper(S.me)))? true : $('p_act').checked};
-    if(p.approved && p.role==='staff' && !tid && !confirm('อนุมัติเป็นพนักงานหน้างานแต่ยังไม่ได้จัดเข้าทีม\nเขาจะเห็นหน้า “รอจัดเข้าทีม” ต่อ — ยืนยันหรือไม่?')) return;
+    if(p.approved && p.role==='staff' && !tid && !confirm('อนุมัติแล้วแต่ยังไม่ได้กำหนดทีมประจำ\n\nไม่เป็นไร ระบบนี้จัดคนเป็นรายวันที่หน้าแผนงานอยู่แล้ว\nพอมีชื่อในทีมย่อยของวันไหน งานจะขึ้นให้เขาเอง — ยืนยันหรือไม่?')) return;
     if(!p.approved && RANK[p.role]>=1 && !confirm('ตั้งเป็น'+(ROLES[p.role]||'')+'แล้ว แต่ยังไม่ได้ติ๊ก “อนุมัติให้เข้าใช้งาน”\n\n'+
       'เขาจะยังเข้า Dashboard ไม่ได้ ค้างอยู่ที่หน้ารอ\nบันทึกแบบนี้หรือไม่?')) return;
     if(!p.emp_code) return toast('ต้องมีรหัสพนักงาน');
@@ -5616,6 +5616,29 @@ document.querySelectorAll('#tNav button').forEach(function(b){
   };
 });
 
+/* ตอนนี้ไม่มีใครมีทีมประจำแล้ว — ทีมของแต่ละคนขึ้นกับว่าวันนั้นถูกจัดไปงานไหน
+   ลำดับการหา: งานของวันนี้ → งานถัดไปที่ใกล้ที่สุด → งานล่าสุดที่ผ่านมา */
+async function myCrewJobs(){
+  try{
+    var c=await db.from('it_assignment_crew').select('assignment_id').eq('staff_id', S.me.id);
+    if(c.error || !c.data || !c.data.length) return [];
+    var ids=c.data.map(function(x){ return x.assignment_id; });
+    var a=await db.from('it_assignments').select('*').in('id', ids)
+          .gte('work_date', addDays(todayISO(),-30)).lte('work_date', addDays(todayISO(),60))
+          .order('work_date');
+    return a.error? [] : (a.data||[]);
+  }catch(e){ return []; }
+}
+function teamFromJobs(jobs){
+  if(!jobs || !jobs.length) return null;
+  var t=todayISO();
+  var today=jobs.filter(function(x){ return x.work_date===t; })[0];
+  if(today) return today.team_id;
+  var next=jobs.filter(function(x){ return x.work_date>t; })[0];
+  if(next) return next.team_id;
+  return jobs[jobs.length-1].team_id;
+}
+
 async function loadTeamData(){
   if(!S.me) return;
   if(isMgr(S.me) && (!S.teams || !S.teams.length)){
@@ -5633,7 +5656,9 @@ async function loadTeamData(){
     toast('ผู้ดูแลกำหนดตำแหน่งให้แล้ว: '+(ROLES[S.me.role]||''), 4200);
     S.mgrName=meName(); startMgr(); return;
   }
-  var tid = S.asTeam || S.me.team_id;
+  /* ผู้จัดการที่กดดูในนามทีมใดทีมหนึ่ง ใช้ทีมนั้น · คนทั่วไปใช้ทีมที่ถูกจัดไว้ในวันนั้น */
+  S.myJobs = S.asTeam? [] : await myCrewJobs();
+  var tid = S.asTeam || teamFromJobs(S.myJobs) || S.me.team_id;
   if(!tid){ S.team=null; testBar(); renderTeam(); return; }
 
   var r=await Promise.all([
@@ -5648,6 +5673,12 @@ async function loadTeamData(){
     db.from('it_holidays').select('*').order('hday')
   ]);
   S.asgs=r[0].data||[]; S.sites=r[1].data||[]; S.issues=r[2].data||[];
+  /* คนที่ไม่ได้กดดูในนามทีม จะเห็นเฉพาะงานที่ตัวเองมีชื่ออยู่จริง
+     ไม่งั้นจะเห็นงานของทีมในวันที่ตัวเองไม่ได้ไปด้วย ซึ่งชวนสับสนและเช็คอินผิดใบได้ */
+  if(!S.asTeam && S.myJobs && S.myJobs.length){
+    var mine={}; S.myJobs.forEach(function(x){ mine[x.id]=1; });
+    S.asgs=S.asgs.filter(function(a){ return mine[a.id]; });
+  }
   S.team=r[3].data||null; S.staff=r[4].data||[]; S.icats=r[5].data||[]; S.hols=r[6].data||[];
   var openN=S.issues.filter(function(i){ return i.status!=='closed'&&i.status!=='resolved'; }).length;
   var e=$('tIssN'); e.textContent=openN; e.classList.toggle('hide', !openN);
@@ -5726,7 +5757,7 @@ function renderNoTeam(){
     $('ntBack').onclick=goDash;
     return;
   }
-  $('tTitle').textContent='รอจัดเข้าทีม';
+  $('tTitle').textContent='ยังไม่มีงานที่ถูกจัดไว้';
   $('tSub').textContent=(S.me.name||'')+' · '+S.me.emp_code;
   $('tBody').innerHTML=
     '<div class="blk" style="margin-top:22px"><div class="blk-h">ลงทะเบียนเรียบร้อยแล้ว</div>'+
