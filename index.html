@@ -4,6 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Happy Like Service — แผนงาน</title>
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  ★ ข้อความที่โผล่ตอนแชร์ลิงก์ใน LINE / Facebook / Messenger          ║
+     ║                                                                      ║
+     ║  ถ้าไม่ใส่ส่วนนี้ ตัวขูดข้อมูลจะไปหยิบข้อความในหน้าเว็บมาเอง           ║
+     ║  ซึ่งมักได้ข้อความมั่ว ๆ ซ้ำ ๆ จากหน้า splash กับหน้าล็อกอิน           ║
+     ║                                                                      ║
+     ║  แก้ 3 บรรทัดล่างนี้ให้ตรงกับที่อยากให้คนเห็น                          ║
+     ║  og:image ต้องเป็น URL เต็ม (ขึ้นต้น https://) ไม่ใช่ชื่อไฟล์เฉย ๆ     ║
+     ║  แชร์แล้วยังเห็นของเก่า = ตัวขูดจำไว้ ต้องล้างแคช (ดูวิธีท้ายไฟล์)      ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<meta name="description" content="แผนงานทีมหน้างาน — จัดทีมรายวัน เช็คอินหน้างาน แจ้งปัญหาแบบเรียลไทม์">
+<meta property="og:title" content="Happy Like Service — แผนงาน">
+<meta property="og:description" content="จัดทีมรายวัน · เช็คอินหน้างาน · แจ้งปัญหาแบบเรียลไทม์">
+<meta property="og:image" content="https://frank7k1993-max.github.io/Happy-Like-Sevice/preview.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Happy Like Service">
+<meta property="og:locale" content="th_TH">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#007AFF">
+<meta name="robots" content="noindex, nofollow">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -499,7 +519,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='8.3';
+window.APP_VER='8.4';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
