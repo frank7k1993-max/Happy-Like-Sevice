@@ -499,7 +499,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='8.2';
+window.APP_VER='8.3';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -6016,9 +6016,9 @@ function teamFromJobs(jobs){
 
 async function loadTeamData(){
   if(!S.me) return;
-  if(isMgr(S.me) && (!S.teams || !S.teams.length)){
-    try{ var tt=await db.from('it_teams').select('*').eq('active',true).order('code'); S.teams=tt.data||[]; }catch(e){}
-  }
+  /* โหลดทุกทีมเสมอ ไม่ใช่เฉพาะผู้จัดการ — ช่างไปคนละทีมได้ในแต่ละวัน
+     ถ้าไม่โหลด ป้ายชื่อทีมบนการ์ดงานจะขึ้นเป็นขีดกลางแทนชื่อจริง */
+  try{ var tt=await db.from('it_teams').select('*').order('code'); if(!tt.error) S.teams=tt.data||[]; }catch(e){}
   /* ดึงข้อมูลตัวเองใหม่ทุกครั้ง เผื่อผู้จัดการเพิ่งจัดเข้าทีม */
   try{
     var me=await db.from('it_staff').select('*').eq('id',S.me.id).single();
@@ -6845,22 +6845,45 @@ async function teamIssueSheet(id){
 function renderMe(){
   $('tTitle').textContent='ทีมของฉัน'; $('tSub').textContent=S.me.emp_code;
   var wk=S.asgs, done=wk.filter(function(a){return a.status==='done';}).length;
-  /* ไม่มีทีมประจำแล้ว — แสดง "คนที่ไปด้วยกันวันนี้" จากรายชื่อที่ถูกจัดไว้ในแผนงาน */
+  /* ไม่มีทีมประจำแล้ว — ต้องดูจาก "งานของวันนี้" จริง ๆ เท่านั้น
+     ถ้าวันนี้ไม่มีงาน ห้ามพูดว่า "วันนี้ไปกับทีม X" เพราะเขาไม่ได้ไปไหน
+     ให้บอกงานถัดไปแทน จะได้รู้ว่าต้องเตรียมตัววันไหน */
   var today=todayISO();
-  var mates=crewOn(S.team.id, today);
+  var todayJobs=S.asgs.filter(function(a){ return a.work_date===today; });
+  var nextJob=S.asgs.filter(function(a){ return a.work_date>today; })
+                    .sort(function(a,b){ return a.work_date<b.work_date?-1:1; })[0];
+  var jobNow=todayJobs[0]||null;
+  var mates = jobNow? crewOn(jobNow.team_id, today) : [];
   var meLead=mates.filter(function(m){ return m.lead && m.s.id===S.me.id; }).length>0;
   var myDuty=(mates.filter(function(m){ return m.s.id===S.me.id; })[0]||{}).duty||'';
+  var myHere=jobNow? myPlaceIn(jobNow) : null;
+
+  var todayLine;
+  if(jobNow){
+    var tNow=teamOf(jobNow.team_id);
+    todayLine='<div>วันนี้ไปกับ: <b>'+esc(tNow.name||'—')+'</b> <span style="color:var(--text3)">('+esc(tNow.code||'')+')</span>'+
+      (myHere && myHere.sub? ' · <b>'+esc(myHere.sub)+'</b>' : '')+
+      (myDuty? ' · หน้าที่ <b>'+esc(myDuty)+'</b>' : '')+
+      (jobNow.start_time? ' · นัด <b>'+esc(String(jobNow.start_time).slice(0,5))+' น.</b>' : '')+'</div>';
+  }else if(nextJob){
+    var tNext=teamOf(nextJob.team_id);
+    todayLine='<div style="color:var(--text2)">วันนี้ไม่มีงาน</div>'+
+      '<div>งานถัดไป: <b>'+dayText(nextJob.work_date)+'</b>'+
+      (tNext.name? ' กับ <b>'+esc(tNext.name)+'</b>' : '')+
+      (nextJob.start_time? ' · นัด <b>'+esc(String(nextJob.start_time).slice(0,5))+' น.</b>' : '')+'</div>';
+  }else{
+    todayLine='<div style="color:var(--text2)">วันนี้ไม่มีงาน และยังไม่มีงานล่วงหน้าที่จัดชื่อคุณไว้</div>';
+  }
   $('tBody').innerHTML=
     '<div class="blk"><div class="blk-h">ข้อมูลของฉัน</div><div class="blk-c" style="font-size:14px;line-height:1.9">'+
       '<div><b>'+esc(fullName(S.me)||'—')+'</b> <span style="color:var(--text3)">('+esc(S.me.emp_code)+')</span>'+
         (meLead?' <span class="chip c-purple">หัวหน้าชุดวันนี้</span>':'')+'</div>'+
       '<div>โทร: '+esc(S.me.phone||'—')+'</div>'+
-      '<div>วันนี้ไปกับ: <b>'+esc(S.team.name)+'</b> <span style="color:var(--text3)">('+esc(S.team.code)+')</span>'+
-        (myDuty? ' · หน้าที่ <b>'+esc(myDuty)+'</b>' : '')+'</div>'+
+      todayLine+
       '<div style="font-size:11.5px;color:var(--text3);line-height:1.5;margin-top:4px">'+
         'ทีมจัดใหม่ทุกวันที่หน้าแผนงาน — วันอื่นอาจไปกับทีมอื่นได้</div>'+
     '</div></div>'+
-    '<div class="blk"><div class="blk-h">คนที่ไปด้วยกันวันนี้ ('+mates.length+')</div>'+
+    '<div class="blk"><div class="blk-h">'+(jobNow?'คนที่ไปด้วยกันวันนี้ ('+mates.length+')':'คนที่ไปด้วยกันวันนี้')+'</div>'+
       (mates.length? mates.map(function(m){
         var x=m.s;
         return '<div class="tl"><div class="tl-d" style="background:'+(m.lead?'#5856d6':'#c7c7cc')+'"></div>'+
@@ -6872,9 +6895,10 @@ function renderMe(){
           (x.phone&&x.id!==S.me.id?'<a href="tel:'+esc(x.phone)+'" class="tb-btn" style="align-self:center;text-decoration:none">โทร</a>':'')+
           '</div>'; }).join('')
         : '<div class="blk-c" style="font-size:13.5px;color:var(--text2);line-height:1.7">'+
-          'วันนี้ยังไม่ได้จัดรายชื่อไว้ในแผนงาน<br>ถ้ามีคนไปด้วย ให้ผู้จัดการจัดชื่อเข้าทีมย่อยของวันนี้ก่อน</div>')+
+          (jobNow? 'วันนี้ยังไม่ได้จัดรายชื่อไว้ในแผนงาน<br>ถ้ามีคนไปด้วย ให้ผู้จัดการจัดชื่อเข้าทีมย่อยของวันนี้ก่อน'
+                 : 'วันนี้คุณไม่มีงาน จึงยังไม่มีคนไปด้วยกัน')+'</div>')+
     '</div>'+
-    '<div class="blk"><div class="blk-h">7 วันที่ผ่านมา (ทั้งทีม)</div><div class="blk-c" style="font-size:14px;line-height:1.9">'+
+    '<div class="blk"><div class="blk-h">งานของฉันในช่วงนี้</div><div class="blk-c" style="font-size:14px;line-height:1.9">'+
       '<div>งานที่ได้รับ: <b>'+wk.length+'</b> งาน</div>'+
       '<div>ปิดงานสำเร็จ: <b>'+done+'</b> งาน</div>'+
       '<div>ปัญหาที่แจ้ง: <b>'+S.issues.length+'</b> เรื่อง</div></div></div>'+
