@@ -499,7 +499,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='8.0';
+window.APP_VER='8.2';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1167,6 +1167,7 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
           <div style="flex:1;min-width:190px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">ไซต์</label><select id="asgSite" class="tin" style="width:100%"></select></div>
           <div style="flex:1;min-width:150px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">ทีม</label><select id="asgTeam" class="tin" style="width:100%"></select></div>
           <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เริ่มวันที่</label><input type="date" id="asgDate" class="tin"></div>
+          <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เวลานัดเข้างาน</label><input type="time" id="asgTime" class="tin" style="width:110px"></div>
           <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">กี่วัน</label>
             <select id="asgDays" class="tin"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="12">12</option><option value="14">14</option></select></div>
           <input type="hidden" id="asgSkipSun">
@@ -1801,8 +1802,17 @@ function lgRender(){
       '<div class="fld"><label>เบอร์โทร</label><input id="inPhone" type="tel" inputmode="tel" placeholder="08x-xxx-xxxx"></div>'+
       '<div class="fld"><label>ตั้ง PIN (4–6 หลัก)</label><input id="inPin" type="tel" inputmode="numeric" maxlength="6" placeholder="••••"></div>'+
       '<div class="fld"><label>ยืนยัน PIN อีกครั้ง</label><input id="inPin2" type="tel" inputmode="numeric" maxlength="6" placeholder="••••"></div>'+
+      '<div class="fld" id="regCodeWrap" style="display:none"><label>รหัสเชิญจากผู้จัดการ</label>'+
+        '<input id="inRegCode" placeholder="ขอจากผู้จัดการ" autocapitalize="characters">'+
+        '<p style="font-size:10.5px;color:var(--text3);margin-top:5px;line-height:1.5">'+
+        'บริษัทเปิดให้ลงทะเบียนเฉพาะคนที่มีรหัสเชิญ</p></div>'+
       '<label class="lg-rem"><input type="checkbox" id="lgRemember" checked> จดจำบัญชีนี้ในเครื่อง — ครั้งหน้าแตะรูปเข้าได้เลย</label>'+backLink;
     b.textContent='ลงทะเบียนและเข้าใช้งาน';
+    /* ถามระบบว่าเปิดรับลงทะเบียนแบบไหน แล้วค่อยโชว์ช่องรหัสเชิญ */
+    db.rpc('rtp_set',{k:'reg_mode', d:'open'}).then(function(m){
+      var w=$('regCodeWrap'); if(!w) return;
+      if((m && m.data)==='code') w.style.display='';
+    }).catch(function(){});
     h.innerHTML='ยังไม่มีรหัส <b style="color:var(--text)">'+esc($('inCode').value.trim())+'</b> ในระบบ — ลงทะเบียนได้เลย<br>'+
       'จากนั้นผู้ดูแลจะกำหนดตำแหน่งให้ก่อนถึงจะเริ่มใช้งานได้';
   }
@@ -1858,7 +1868,8 @@ $('btnNext').onclick=async function(){
       if(!nm) throw new Error('ใส่ชื่อ–สกุลก่อน');
       var bad2=pinOK(q1,q2); if(bad2) throw new Error(bad2);
       var rr=await db.rpc('rtp_register',{p_emp:code, p_name:nm, p_phone:ph||null, p_pin:q1,
-        p_title: ($('inTitle') && $('inTitle').value) || null});
+        p_title: ($('inTitle') && $('inTitle').value) || null,
+        p_regcode: ($('inRegCode') && $('inRegCode').value.trim()) || null});
       if(rr.error) throw rr.error;
       finishLogin(rr.data.staff, rr.data.token, keep());
     }
@@ -3102,6 +3113,124 @@ async function addToSub(subId, staffId){
 
 /* บอกว่าต้องออกจากจุดออกเดินทางกี่โมง ถ้ายังไม่ได้ตั้งจุดก็บอกวิธีตั้ง */
 /* ── ตั้งค่าความเร็วรถและเวลาเผื่อ — ใช้ร่วมกันทุกเครื่อง เก็บใน it_settings ── */
+/* ── คุมการลงทะเบียน: โหมด · รหัสเชิญ · โควตาต่อ IP · บันทึก · ล้างบัญชีขยะ ── */
+async function regGuard(){
+  sheet('ควบคุมการลงทะเบียน','<div class="empty"><span class="spin"></span></div>','', true);
+  var log=[];
+  try{ var r=await db.rpc('rtp_reg_recent',{p_limit:80}); if(!r.error) log=r.data||[]; }catch(e){}
+  var g=function(k,d){ return (S.settings||{})[k]!=null? S.settings[k] : d; };
+  var mode=g('reg_mode','open');
+
+  $('shB').innerHTML=
+    '<div class="cw-grid">'+
+      '<div class="cw-col">'+
+        '<div class="sec-h">โหมดการลงทะเบียน</div>'+
+        '<div class="row" style="margin-bottom:12px">'+
+          ['open','code','closed'].map(function(k){
+            var L={open:'เปิดให้ทุกคน', code:'ต้องมีรหัสเชิญ', closed:'ปิดรับ'}[k];
+            return '<button class="opt'+(mode===k?' on':'')+'" data-rm="'+k+'" style="text-align:center">'+L+'</button>';
+          }).join('')+
+        '</div>'+
+        '<div id="rgHint" style="background:var(--s1);border:1px solid var(--border);border-radius:11px;'+
+          'padding:11px 13px;font-size:12.5px;line-height:1.7;color:var(--text2);margin-bottom:12px"></div>'+
+        '<div class="fld" id="rgCodeWrap"><label>รหัสเชิญ</label>'+
+          '<div class="row"><input id="rgCode" value="'+esc(g('reg_code',''))+'" placeholder="เช่น HLS2026">'+
+          '<button class="btn ghost sm" id="rgGen" style="flex:0 0 92px">สุ่มใหม่</button></div></div>'+
+        '<div class="sec-h" style="margin-top:16px">โควตาต่อเครื่อง (IP)</div>'+
+        '<div class="row">'+
+          '<div class="fld"><label>ต่อชั่วโมง</label><input type="number" id="rgH" min="0" max="50" value="'+esc(g('reg_max_hour','3'))+'"></div>'+
+          '<div class="fld"><label>ต่อวัน</label><input type="number" id="rgD" min="0" max="200" value="'+esc(g('reg_max_day','5'))+'"></div>'+
+          '<div class="fld"><label>ล้างบัญชีค้างเกิน (วัน)</label><input type="number" id="rgP" min="1" max="365" value="'+esc(g('reg_purge_days','30'))+'"></div>'+
+        '</div>'+
+        '<div class="row" style="margin-top:6px">'+
+          '<button class="btn ghost sm" id="rgPurge">🧹 ล้างบัญชีขยะเดี๋ยวนี้</button>'+
+          '<button class="btn sm" id="rgSave">บันทึกค่าตั้ง</button></div>'+
+        '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:10px">'+
+          'ล้างเฉพาะบัญชีที่ยังไม่อนุมัติ ไม่เคยถูกจัดเข้างาน และไม่เคยส่งรายงาน — ของจริงไม่หาย</p>'+
+      '</div>'+
+      '<div class="cw-col">'+
+        '<div class="cw-pool">'+
+          '<div class="cw-pool-h"><span>ประวัติการลงทะเบียน</span>'+
+            '<span class="chip c-gray" style="margin-left:auto">'+log.length+' รายการ</span></div>'+
+          '<div class="cw-pool-l" id="rgLog"></div>'+
+        '</div>'+
+        '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:9px">'+
+          'IP เปลี่ยนได้ง่ายด้วยการปิด-เปิดเน็ตมือถือ และคนหลายคนอาจใช้ IP เดียวกัน '+
+          'การบล็อกจึงเป็นชั้นเสริม ไม่ใช่ชั้นหลัก</p>'+
+      '</div>'+
+    '</div>';
+
+  var REASON={ok:'สำเร็จ', ip_blocked:'IP ถูกบล็อก', closed:'ปิดรับอยู่', bad_code:'รหัสเชิญผิด',
+    no_code_set:'ยังไม่ตั้งรหัสเชิญ', rate_limit:'เกินโควตา', dup_code:'รหัสซ้ำ'};
+  var drawLog=function(){
+    $('rgLog').innerHTML = log.length? log.map(function(x){
+      return '<div class="cw-p" style="cursor:default">'+
+        '<span style="flex:1;min-width:0">'+
+          '<div style="font-size:12.5px;font-weight:600">'+esc(x.emp_code||'—')+
+            ' <span class="chip '+(x.ok?'c-green':'c-red')+'">'+esc(REASON[x.reason]||x.reason||'')+'</span>'+
+            (x.blocked?' <span class="chip c-gray">บล็อกอยู่</span>':'')+'</div>'+
+          '<div class="brow-s"><span class="tm">'+esc(x.ip||'ไม่ทราบ IP')+'</span>'+
+            '<span>'+fmtDT(x.created_at)+'</span>'+
+            '<span class="tm">จาก IP นี้ '+x.ip_total+' ครั้ง</span></div></span>'+
+        (x.ip? '<button class="tb-btn" data-bl="'+esc(x.ip)+'" data-on="'+(x.blocked?'0':'1')+'">'+
+               (x.blocked?'ปลดบล็อก':'บล็อก IP')+'</button>' : '')+
+      '</div>';
+    }).join('') : '<div class="cw-empty" style="border:none">ยังไม่มีใครลงทะเบียนเข้ามา</div>';
+    $('rgLog').querySelectorAll('[data-bl]').forEach(function(b){
+      b.onclick=async function(){
+        var on=b.dataset.on==='1';
+        var r=await db.rpc('rtp_block_ip',{p_ip:b.dataset.bl, p_note:'จากหน้าควบคุมการลงทะเบียน', p_on:on});
+        if(r.error) return toast(r.error.message||'ทำรายการไม่สำเร็จ',4500);
+        toast(on? ('บล็อก '+b.dataset.bl+' แล้ว') : ('ปลดบล็อก '+b.dataset.bl+' แล้ว'), 3000);
+        regGuard();
+      };
+    });
+  };
+  var drawHint=function(){
+    var t={open:'ใครก็ตามที่เปิดลิงก์นี้สามารถสร้างบัญชีได้เอง — สะดวกตอนเปิดใช้ครั้งแรก แต่เสี่ยงบัญชีขยะที่สุด',
+           code:'สร้างบัญชีได้เฉพาะคนที่รู้รหัสเชิญ — บอกรหัสในกลุ่มไลน์บริษัท เปลี่ยนรหัสได้ทุกเมื่อ <b>แนะนำแบบนี้</b>',
+           closed:'ปิดรับทั้งหมด พนักงานใหม่ต้องให้คุณสร้างบัญชีให้ใน SQL Editor — แน่นหนาที่สุด แต่คุณต้องทำเองทุกคน'}[mode];
+    $('rgHint').innerHTML=t;
+    $('rgCodeWrap').style.display = (mode==='code')? '' : 'none';
+  };
+  drawHint(); drawLog();
+
+  $('shB').querySelectorAll('[data-rm]').forEach(function(b){
+    b.onclick=function(){
+      mode=b.dataset.rm;
+      $('shB').querySelectorAll('[data-rm]').forEach(function(o){ o.classList.toggle('on', o.dataset.rm===mode); });
+      drawHint();
+    };
+  });
+  $('rgGen').onclick=function(){
+    var c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', s='';
+    for(var i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)];
+    $('rgCode').value='HLS-'+s;
+  };
+  $('rgPurge').onclick=async function(){
+    var d=+$('rgP').value||30;
+    if(!confirm('ลบบัญชีที่ยังไม่อนุมัติและค้างเกิน '+d+' วันทั้งหมด?\n\nคนที่เคยถูกจัดเข้างานหรือเคยส่งรายงานจะไม่ถูกลบ')) return;
+    this.disabled=true;
+    var r=await db.rpc('rtp_purge_pending',{p_days:d});
+    this.disabled=false;
+    if(r.error) return toast(r.error.message||'ล้างไม่สำเร็จ',4500);
+    toast('ลบบัญชีขยะไป '+(r.data||0)+' บัญชี',3600); loadMgr();
+  };
+  $('rgSave').onclick=async function(){
+    if(mode==='code' && !$('rgCode').value.trim()) return toast('ตั้งรหัสเชิญก่อน');
+    this.disabled=true;
+    var vals={reg_mode:mode, reg_code:$('rgCode').value.trim(),
+              reg_max_hour:$('rgH').value, reg_max_day:$('rgD').value, reg_purge_days:$('rgP').value};
+    var ks=Object.keys(vals);
+    for(var i=0;i<ks.length;i++){
+      var r=await db.from('it_settings').upsert({k:ks[i], v:String(vals[ks[i]]),
+              updated_at:new Date().toISOString(), updated_by:meName()},{onConflict:'k'});
+      if(r.error){ toast('บันทึกไม่สำเร็จ: '+r.error.message,4500); this.disabled=false; return; }
+    }
+    closeSheet(); toast('บันทึกแล้ว'); loadMgr();
+  };
+}
+
 function tripSettings(){
   var g=function(k,d){ return setNum(k,d); };
   sheet('ตั้งค่าการเดินทาง',
@@ -3970,6 +4099,8 @@ function quickAssign(teamId, date){
       '<div class="row"><select id="q_days">'+
         [1,2,3,4,5,6,7,8,9,10,12,14].map(function(n){ return '<option value="'+n+'">'+n+' วัน</option>'; }).join('')+
       '</select>'+
+      '<div style="flex:1;min-width:120px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เวลานัดเข้างาน</label>'+
+        '<input type="time" id="q_time" class="tin" style="width:100%"></div>'+
       '<input type="hidden" id="q_skipsun"></div></div>'+
     '<div id="q_daylist"></div>',
     '<button class="btn sm" id="q_save">มอบหมาย</button>');
@@ -4056,6 +4187,7 @@ function quickAssign(teamId, date){
       var sc=scopeLabel(st.keys);
       if(st.extra.length) sc += (sc?' + ':'')+st.extra.join(' + ');
       return {site_id:siteId, team_id:teamId, work_date:d, scope:sc,
+              start_time: ($('q_time') && $('q_time').value) || null,
               checklist:scopeChecklist(st.keys, st.extra)};
     });
     var r=await db.from('it_assignments').upsert(rows, {onConflict:'site_id,team_id,work_date'});
@@ -5211,9 +5343,12 @@ function renderStaff(){
   var un=[];   /* ไม่มีสถานะ "รอจัดทีม" แล้ว เพราะจัดคนเป็นรายวันที่แผนงาน */
   var noPin=all.filter(function(x){ return !x.has_pin; }).length;
   var mgrs=all.filter(function(x){ return rank(x)>=2; }).length;
-  $('staffNote').textContent = (MT_Q? (list.length+' / '+all.length+' คน') : (all.length+' คน'))+
+  $('staffNote').innerHTML = esc((MT_Q? (list.length+' / '+all.length+' คน') : (all.length+' คน'))+
     (pend.length?(' · 🆕 รออนุมัติ '+pend.length):'')+' · ผู้จัดการขึ้นไป '+mgrs+
-    (un.length?(' · รอจัดทีม '+un.length):'')+(noPin?(' · ยังไม่ตั้ง PIN '+noPin):'');
+    (un.length?(' · รอจัดทีม '+un.length):'')+(noPin?(' · ยังไม่ตั้ง PIN '+noPin):''))+
+    (rank(S.me)>=2? ' <button class="tb-btn" id="btnRegGuard" style="height:22px;padding:0 8px;font-size:10.5px" '+
+      'title="คุมว่าใครสร้างบัญชีเองได้บ้าง">🛡 การลงทะเบียน</button>' : '');
+  var rg=$('btnRegGuard'); if(rg) rg.onclick=regGuard;
   var tb=$('tabStaffN');
   var badge=pend.length||un.length;
   if(tb){ tb.textContent=badge; tb.style.display=badge?'':'none'; }
@@ -5708,8 +5843,9 @@ $('btnAsg').onclick=async function(){
   if(asgScope.extra.length) scope += (scope?' + ':'')+asgScope.extra.join(' + ');
   var ck=scopeChecklist(asgScope.keys, asgScope.extra);
   var ds=planDates($('asgDate').value||S.date, +$('asgDays').value||1, $('asgSkipSun').checked);
+  var atime=($('asgTime') && $('asgTime').value) || null;
   var rows=ds.map(function(d){
-    return {site_id:siteId, team_id:teamId, work_date:d, scope:scope, checklist:ck};
+    return {site_id:siteId, team_id:teamId, work_date:d, scope:scope, checklist:ck, start_time:atime};
   });
   this.disabled=true;
   var r=await db.from('it_assignments').upsert(rows,{onConflict:'site_id,team_id,work_date'});
@@ -6040,7 +6176,9 @@ function dayText(d){
 
 function renderJobs(){
   $('tTitle').textContent='แผนงานของฉัน';
-  $('tSub').textContent=meName()+' · '+S.team.name;
+  /* ห้ามเอาชื่อทีมมาแปะกับตัวคน เพราะแต่ละวันเขาไปคนละทีมได้
+     ทีมเป็นของ "งาน" ไม่ใช่ของ "คน" — ไปแสดงในการ์ดงานแต่ละใบแทน */
+  $('tSub').textContent=fullName(S.me)+' · '+S.me.emp_code;
 
   var today=todayISO(), tmr=addDays(today,1);
   var tJobs = S.asgs.filter(function(a){ return a.work_date===today; });
@@ -6111,10 +6249,20 @@ function jobCard(a){
   var iss=S.issues.filter(function(i){ return i.assignment_id===a.id && i.status!=='closed'&&i.status!=='resolved'; }).length;
   var ck=Array.isArray(a.checklist)?a.checklist:[];
   var lab = a.work_date!==todayISO()? dayLabel(a.work_date) : '';
+  var t=teamOf(a.team_id), mine=myPlaceIn(a);
   return '<div class="jcard" data-id="'+a.id+'">'+
     '<div class="jcard-t"><span class="nm">'+esc(s.name||'—')+'</span>'+
       (lab?'<span class="chip '+(lab==='พรุ่งนี้'?'c-orange':'c-gray')+'">'+lab+'</span>':'')+
       '<span class="chip '+st.c+'">'+st.l+'</span></div>'+
+    /* เวลานัดกับทีมย่อยคือสิ่งที่ช่างต้องรู้ก่อนกดเข้าไปดูรายละเอียด */
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:2px 0 5px">'+
+      (a.start_time? '<span class="chip c-orange" style="font-size:12px;font-weight:700">⏰ '+
+          esc(String(a.start_time).slice(0,5))+' น.</span>' : '')+
+      '<span class="chip c-blue">'+esc((t.code?t.code+' ':'')+(t.name||''))+'</span>'+
+      (mine && mine.sub? '<span class="chip c-purple">'+esc(mine.sub)+'</span>':'')+
+      (mine && mine.duty? '<span class="chip c-gray">'+esc(mine.duty)+'</span>':'')+
+      (mine && mine.lead? '<span class="chip c-purple">★ หัวหน้าชุด</span>':'')+
+    '</div>'+
     '<div class="jcard-s">'+esc(s.address||s.customer||'')+
       (a.scope?'<br><b style="font-weight:600;color:var(--text)">'+esc(a.scope)+'</b>':'')+
       (iss?'<br><span class="chip c-red">⚠ ปัญหาค้าง '+iss+' เรื่อง</span>':'')+'</div>'+
@@ -6122,6 +6270,41 @@ function jobCard(a){
       '<span class="pc">'+pct(a.progress)+'%</span></div>'+
     (ck.length?'<div style="font-size:11px;color:var(--text3);margin-top:6px">เช็กลิสต์ '+ck.filter(function(c){return c.done;}).length+'/'+ck.length+' ข้อ</div>':'')+
   '</div>';
+}
+
+/* ฉันอยู่ทีมย่อยไหนของงานนี้ และหน้าที่อะไร */
+function myPlaceIn(a){
+  if(!a || !S.me) return null;
+  var c=crewRows(a).filter(function(x){ return x.staff_id===S.me.id; })[0];
+  if(!c) return null;
+  var st=subsOf(a).filter(function(s){ return s.id===c.subteam_id; })[0];
+  return {sub: st? st.name : null, duty:(dutyOf(c.duty_id)||{}).label||'', lead:!!c.is_lead};
+}
+/* แถบสรุปว่าวันนั้นไปกับทีมไหน อยู่ทีมย่อยไหน นัดกี่โมง — ฝั่งพนักงานต้องเห็นชัดที่สุด */
+function jobBriefHTML(a){
+  var t=teamOf(a.team_id), mine=myPlaceIn(a), d=departPlan(a);
+  var rows='';
+  rows+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+    '<span class="chip c-blue" style="font-size:12px">🚩 '+esc((t.code?t.code+' ':'')+(t.name||'—'))+'</span>'+
+    (mine && mine.sub? '<span class="chip c-purple" style="font-size:12px">👥 '+esc(mine.sub)+'</span>':'')+
+    (mine && mine.duty? '<span class="chip c-gray" style="font-size:12px">'+esc(mine.duty)+'</span>':'')+
+    (mine && mine.lead? '<span class="chip c-purple" style="font-size:12px">★ หัวหน้าชุด</span>':'')+
+  '</div>';
+  if(a.start_time){
+    rows+='<div style="margin-top:9px;font-size:20px;font-weight:700;letter-spacing:-.02em">'+
+      '⏰ นัดเข้างาน '+esc(String(a.start_time).slice(0,5))+' น.</div>';
+    if(d && d.leave!=null)
+      rows+='<div style="font-size:12.5px;color:var(--text2);margin-top:2px;line-height:1.5">'+
+        'ออกจาก '+esc(d.tv.from.label||'จุดออกเดินทาง')+' ไม่เกิน <b style="color:var(--accent)">'+hhmm(d.leave)+' น.</b>'+
+        ' · ระยะทาง '+d.tv.km.toFixed(1)+' กม.</div>';
+  }else{
+    rows+='<div style="margin-top:7px;font-size:12.5px;color:var(--text3)">ออฟฟิศยังไม่ได้ระบุเวลานัดเข้างาน</div>';
+  }
+  if(!mine)
+    rows+='<div style="margin-top:7px;font-size:12px;color:var(--orange)">'+
+      'ยังไม่มีชื่อคุณในทีมย่อยของงานนี้ — ถ้าต้องไปด้วย แจ้งออฟฟิศให้จัดชื่อเข้าก่อน</div>';
+  return '<div class="blk"><div class="blk-h">งานนี้คุณไปกับใคร</div>'+
+    '<div class="blk-c">'+rows+'</div></div>';
 }
 
 function renderJob(){
@@ -6157,6 +6340,8 @@ function renderJob(){
     h+='<div class="mpad" style="margin-top:-4px"><button class="bigbtn" id="bReopen" '+
       'style="background:var(--s3);color:var(--text);box-shadow:none">↩️ เปิดงานต่อ / แก้ไข</button></div>';
   }
+
+  h+=jobBriefHTML(a);
 
   /* ข้อมูลไซต์ — ยังไม่เช็คอินให้ขึ้นก่อน เพราะต้องใช้นำทาง */
   var siteBlk='<div class="blk"><div class="blk-h">หน้างาน</div><div class="blk-c" style="font-size:13.5px;line-height:1.65">'+
@@ -6568,7 +6753,7 @@ async function reopenDay(a){
 }
 
 function renderTeamIssues(){
-  $('tTitle').textContent='ปัญหาที่แจ้งไว้'; $('tSub').textContent=S.team.name+' · '+meName();
+  $('tTitle').textContent='ปัญหาที่แจ้งไว้'; $('tSub').textContent=meName()+' · '+S.me.emp_code;
   var open=S.issues.filter(function(i){return i.status!=='closed'&&i.status!=='resolved';});
   var done=S.issues.filter(function(i){return i.status==='closed'||i.status==='resolved';});
   var card=function(i){
