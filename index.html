@@ -501,7 +501,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='7.5';
+window.APP_VER='7.7';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1109,6 +1109,9 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
       <div class="card">
         <div class="card-h"><span>แผนที่หน้างาน</span>
           <span style="display:flex;align-items:center;gap:9px">
+            <label style="text-transform:none;letter-spacing:0;font-weight:500;font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer"
+              title="แสดงไซต์ที่ยังไม่ได้เข้าและไซต์ที่วันนี้ไม่มีงาน">
+              <input type="checkbox" id="mapSites" checked> 📍 ไซต์อื่นทั้งหมด</label>
             <label style="text-transform:none;letter-spacing:0;font-weight:500;font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer">
               <input type="checkbox" id="mapRoute" checked> 🚗 เส้นทางถนน</label>
             <span id="mapNote" style="text-transform:none;letter-spacing:0;font-weight:500">—</span></span></div>
@@ -1973,6 +1976,7 @@ $('pnHol').onclick=holidayManager;
 $('pnShift').onclick=shiftTool;
 $('pnPrint').onclick=printSchedule;
 $('pnXls').onclick=exportSchedule;
+if($('mapSites')) $('mapSites').onchange=function(){ renderMap(); };
 /* รายชื่อคนเข้าหน้างานของทุกงานในช่วงที่กำลังแสดง — เรียงตามวันแล้วตามทีม */
 function planJobsShown(){
   var d=scheduleData();
@@ -2053,6 +2057,7 @@ async function loadMgr(){
   }
   S.sites=res[0]; S.teams=res[1]; S.asgs=res[2]; S.staff=res[3]; S.work=res[4]; S.pins=res[5]; S.icats=res[6]; S.hols=res[7]; S.issues=res[8];
   await loadDuties();                              /* รายการหน้าที่สำหรับทีมย่อย */
+  await loadSiteStat();                            /* ประวัติรายไซต์ — ใช้บอกว่าเคยเข้าแล้วหรือยัง */
 
   try{ renderAll(); }
   catch(e){ errs.push('แสดงผลหน้าจอ → '+(e.message||e)); }
@@ -2166,6 +2171,37 @@ function issueSet(f){
   });
 }
 
+/* สรุปประวัติของแต่ละไซต์จากใบงานทั้งหมด
+   ใช้ตอบว่า "ไซต์นี้เคยมีคนเข้าไปหรือยัง" และ "ครั้งล่าสุดเมื่อไหร่"
+   ดึงเฉพาะคอลัมน์ที่ใช้ ไม่ดึงทั้งแถว เพื่อไม่ให้กิน egress โดยเปล่าประโยชน์ */
+async function loadSiteStat(){
+  S.siteStat={};
+  try{
+    var r=await db.from('it_assignments').select('site_id,work_date,checkin_at,status,progress')
+          .order('work_date',{ascending:false}).limit(3000);
+    if(r.error) return;
+    (r.data||[]).forEach(function(a){
+      var st=S.siteStat[a.site_id];
+      if(!st){ st=S.siteStat[a.site_id]={jobs:0, lastDate:null, lastVisit:null, everIn:false, best:0}; }
+      st.jobs++;
+      if(!st.lastDate || a.work_date>st.lastDate) st.lastDate=a.work_date;
+      if(a.checkin_at){
+        st.everIn=true;
+        if(!st.lastVisit || a.work_date>st.lastVisit) st.lastVisit=a.work_date;
+      }
+      st.best=Math.max(st.best, a.progress||0);
+    });
+  }catch(e){}
+}
+/* ไซต์นี้อยู่ในสถานะไหนเมื่อเทียบกับวันนี้ */
+function siteState(s){
+  var st=(S.siteStat||{})[s.id]||{jobs:0,everIn:false,best:0};
+  if(s.status==='done' || st.best>=100) return {k:'done',  l:'ปิดงานแล้ว',      c:'#34c759'};
+  if(s.status==='hold')                 return {k:'hold',  l:'พักงานไว้',        c:'#8e8e93'};
+  if(!st.everIn)                        return {k:'never', l:'ยังไม่เคยเข้า',    c:'#ff9500'};
+  return {k:'seen', l:'เข้าแล้ว — วันนี้ไม่มีงาน', c:'#5856d6'};
+}
+
 function asgFiltered(){
   return S.asgs.filter(function(a){
     if(S.ovFilter!=='all' && a.status!==S.ovFilter) return false;
@@ -2259,10 +2295,50 @@ function renderMap(){
     m.on('click', function(){ setTimeout(function(){ openAsg(a.id); }, 250); });
     pts.push(at);
   });
+  /* ── ไซต์ที่วันนี้ไม่มีงาน — งานไม่ได้มีทุกวัน แผนที่จึงต้องบอกด้วยว่ายังเหลือที่ไหนบ้าง ── */
+  var busy={}; list.forEach(function(a){ busy[a.site_id]=1; });
+  var nNever=0, nSeen=0;
+  var showSites = !$('mapSites') || $('mapSites').checked;
+  if(showSites){
+    S.sites.forEach(function(s){
+      if(busy[s.id] || s.lat==null || s.lng==null) return;
+      if(S.ovQ && ((s.name||'')+(s.code||'')+(s.customer||'')+(s.address||''))
+          .toLowerCase().indexOf(S.ovQ)<0) return;
+      var ss=siteState(s);
+      if(ss.k==='never') nNever++; else if(ss.k==='seen') nSeen++;
+      var hist=(S.siteStat||{})[s.id]||{};
+      /* วงเล็กโปร่ง แยกจากหมุดงานวันนี้ชัดเจน ไม่แย่งสายตา */
+      var mk=L.circleMarker([s.lat,s.lng],{
+        radius: ss.k==='never'? 8 : 6,
+        color: ss.c, weight: ss.k==='never'? 2.5 : 1.8,
+        fillColor: ss.c, fillOpacity: ss.k==='never'? .35 : .16,
+        dashArray: ss.k==='never'? null : '3,3'
+      }).addTo(S.mapLayer);
+      mk.bindPopup('<b>'+esc(s.name||'')+'</b> <span style="color:#8e8e93">'+esc(s.code||'')+'</span>'+
+        '<br><span style="color:'+ss.c+';font-weight:600">'+ss.l+'</span>'+
+        (s.customer? '<br>'+esc(s.customer) : '')+
+        (hist.lastVisit? ('<br>เข้าล่าสุด '+dayText(hist.lastVisit)) :
+          (hist.lastDate? ('<br>เคยลงแผนไว้ '+dayText(hist.lastDate)+' แต่ยังไม่เช็คอิน') : '<br>ยังไม่เคยลงแผนงาน'))+
+        (hist.best? ('<br>คืบหน้าสูงสุด '+pct(hist.best)+'%') : '')+
+        (s.due_date? ('<br>กำหนดเสร็จ '+dayText(s.due_date)) : ''));
+    });
+  }
+
   var noGeo=list.filter(function(a){ var s=siteOf(a.site_id); return s.lat==null && a.checkin_lat==null; }).length;
-  $('mapNote').textContent = pts.length+' จุด · เช็คอินจริง '+nGps+
-    (noGeo?(' · '+noGeo+' ไซต์ยังไม่มีพิกัด'):'');
-  if(pts.length) S.map.fitBounds(pts, {padding:[40,40], maxZoom:16});
+  var noGeoSite=S.sites.filter(function(s){ return !busy[s.id] && s.lat==null; }).length;
+  $('mapNote').textContent = pts.length+' จุดงานวันนี้ · เช็คอินจริง '+nGps+
+    (showSites&&nNever? (' · 🟠 ยังไม่เคยเข้า '+nNever) : '')+
+    (showSites&&nSeen?  (' · 🟣 เข้าแล้ว '+nSeen) : '')+
+    (noGeo?(' · '+noGeo+' ใบงานไม่มีพิกัด'):'')+
+    (showSites&&noGeoSite?(' · '+noGeoSite+' ไซต์ยังไม่ใส่พิกัด'):'');
+  if(pts.length){
+    S.map.fitBounds(pts, {padding:[40,40], maxZoom:16});
+  }else if(showSites){
+    /* วันที่ไม่มีงาน ให้ซูมไปที่ไซต์ที่ยังเหลือ ไม่งั้นแผนที่ค้างอยู่กลางกรุงเทพเปล่า ๆ */
+    var sp=S.sites.filter(function(s){ return s.lat!=null && s.lng!=null && siteState(s).k!=='done'; })
+             .map(function(s){ return [s.lat,s.lng]; });
+    if(sp.length) S.map.fitBounds(sp, {padding:[40,40], maxZoom:14});
+  }
   drawRoutes(queue, tok);
 }
 
@@ -2843,11 +2919,18 @@ function drawPool(){
   /* คอลัมน์รายชื่อรับคนที่ลากออกมาจากทีมย่อย = เอาออกจากงานนี้ */
   var pool=document.querySelector('.cw-pool');
   if(pool){
-    pool.ondragover=function(e){
+    var pover=function(e){
       if(!CW.dragMem) return;
-      e.preventDefault(); e.dataTransfer.dropEffect='move'; pool.classList.add('dropout');
+      e.preventDefault();
+      try{ e.dataTransfer.dropEffect='move'; }catch(_){}
+      pool.classList.add('dropout');
     };
-    pool.ondragleave=function(){ pool.classList.remove('dropout'); };
+    pool.ondragenter=pover;
+    pool.ondragover=pover;
+    pool.ondragleave=function(e){
+      if(pool.contains(e.relatedTarget)) return;
+      pool.classList.remove('dropout');
+    };
     pool.ondrop=function(e){
       pool.classList.remove('dropout');
       if(!CW.dragMem) return;
@@ -2860,11 +2943,13 @@ function drawPool(){
   box.querySelectorAll('[data-pool]').forEach(function(el){
     el.ondragstart=function(e){
       CW.drag=el.dataset.pool; el.classList.add('dragging');
-      try{ e.dataTransfer.setData('text/plain', CW.drag); e.dataTransfer.effectAllowed='copy'; }catch(_){}
+      /* ต้องเป็น copyMove ให้ครอบทั้งสองแบบ ไม่งั้นฝั่งรับที่ตอบ move จะถูกเบราว์เซอร์ปฏิเสธ */
+      try{ e.dataTransfer.setData('text/plain', CW.drag); e.dataTransfer.effectAllowed='copyMove'; }catch(_){}
     };
     el.ondragend=function(){
       el.classList.remove('dragging'); CW.drag=null;
-      document.querySelectorAll('.cw-sub.dropok').forEach(function(c){ c.classList.remove('dropok'); });
+      document.querySelectorAll('.dropok').forEach(function(c){ c.classList.remove('dropok'); });
+      var pl=document.querySelector('.cw-pool'); if(pl) pl.classList.remove('dropout');
     };
     /* บนมือถือลากไม่ได้ — แตะแล้วใส่ทีมย่อยล่างสุดให้แทน */
     el.onclick=function(){
@@ -2959,12 +3044,20 @@ function drawSubs(){
 
   /* ทีมย่อยเป็นจุดวาง */
   box.querySelectorAll('[data-sub]').forEach(function(el){
-    el.ondragover=function(e){
+    var over=function(e){
       if(!CW.drag && !CW.dragMem) return;
       if(CW.dragMem && CW.dragFrom===el.dataset.sub) return;   /* ทีมย่อยเดิม ไม่ต้องไฮไลต์ */
-      e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('dropok');
+      e.preventDefault();
+      /* ต้องตอบให้ตรงกับที่ต้นทางอนุญาต ไม่งั้น drop จะไม่ยิง */
+      try{ e.dataTransfer.dropEffect = CW.dragMem? 'move' : 'copy'; }catch(_){}
+      el.classList.add('dropok');
     };
-    el.ondragleave=function(){ el.classList.remove('dropok'); };
+    el.ondragenter=over;      /* บางเบราว์เซอร์ต้อง preventDefault ตั้งแต่ dragenter */
+    el.ondragover=over;
+    el.ondragleave=function(e){
+      if(el.contains(e.relatedTarget)) return;   /* ย้ายไปทับลูกตัวเอง ไม่ใช่ออกจากกล่อง */
+      el.classList.remove('dropok');
+    };
     el.ondrop=function(e){
       el.classList.remove('dropok');
       if(!CW.drag && !CW.dragMem) return;
@@ -2988,7 +3081,7 @@ function drawSubs(){
       }
       CW.dragMem=el.dataset.mem; CW.dragFrom=el.dataset.in; CW.drag=null;
       el.classList.add('dragging');
-      try{ e.dataTransfer.setData('text/plain', CW.dragMem); e.dataTransfer.effectAllowed='move'; }catch(_){}
+      try{ e.dataTransfer.setData('text/plain', CW.dragMem); e.dataTransfer.effectAllowed='copyMove'; }catch(_){}
     };
     el.ondragend=function(){
       el.classList.remove('dragging'); CW.dragMem=null; CW.dragFrom=null;
