@@ -344,7 +344,12 @@ body.dragmode .pjob:active{cursor:grabbing}
 .cw-sub{border:1.5px solid var(--border);border-radius:12px;margin-bottom:11px;background:var(--bg);
   transition:.14s}
 .cw-sub.dropok{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);background:var(--accent-glow)}
-.cw-mem{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px solid var(--border);flex-wrap:wrap}
+.cw-mem{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px solid var(--border);
+  flex-wrap:wrap;cursor:grab;transition:.12s}
+.cw-mem:active{cursor:grabbing}
+.cw-mem.dragging{opacity:.35}
+.cw-mem .g{color:var(--text3);font-size:14px;line-height:1;flex:0 0 auto}
+.cw-pool.dropout{border-color:var(--red);box-shadow:0 0 0 3px var(--red-dim)}
 .cw-empty{padding:16px 12px;text-align:center;font-size:12px;color:var(--text3);border-top:1px dashed var(--border)}
 .sh-h{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
 .sh-h .t{flex:1;font-size:16px;font-weight:700;letter-spacing:-.01em}
@@ -496,7 +501,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='7.3';
+window.APP_VER='7.4';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -2769,7 +2774,7 @@ function crewFlat(a){
 }
 
 /* ── หน้าจัดทีมย่อย: ซ้ายทีมย่อย ขวารายชื่อทั้งหมด ลากใส่กันได้ ── */
-var CW={a:null, q:'', drag:null};
+var CW={a:null, q:'', drag:null, dragMem:null, dragFrom:null};
 async function crewSheet(a){
   if(!a) return;
   CW.a=a; CW.q=''; CW.drag=null;
@@ -2798,6 +2803,7 @@ async function crewSheet(a){
         '</div>'+
         '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:9px">'+
           'ลากชื่อจากรายการนี้ไปวางที่ทีมย่อยทางซ้าย หรือแตะชื่อเพื่อใส่ลงทีมย่อยล่างสุด<br>'+
+          'คนที่อยู่ในทีมย่อยแล้วลากสลับไปทีมย่อยอื่นได้ · ลากกลับมาวางตรงนี้เพื่อเอาออกจากงาน<br>'+
           'มีผลเฉพาะงานวันนี้ · แก้วันอื่นไม่กระทบกัน</p>'+
       '</div>'+
     '</div>', '', true);
@@ -2834,6 +2840,23 @@ function drawPool(){
   }).join('') : '<div class="cw-empty" style="border:none">'+
       (CW.q? 'ไม่พบใครที่ตรงกับที่ค้น' : (total? '' : 'ทุกคนอยู่ในงานนี้แล้ว'))+'</div>';
 
+  /* คอลัมน์รายชื่อรับคนที่ลากออกมาจากทีมย่อย = เอาออกจากงานนี้ */
+  var pool=document.querySelector('.cw-pool');
+  if(pool){
+    pool.ondragover=function(e){
+      if(!CW.dragMem) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='move'; pool.classList.add('dropout');
+    };
+    pool.ondragleave=function(){ pool.classList.remove('dropout'); };
+    pool.ondrop=function(e){
+      pool.classList.remove('dropout');
+      if(!CW.dragMem) return;
+      e.preventDefault(); e.stopPropagation();
+      var mid=CW.dragMem; CW.dragMem=null; CW.dragFrom=null;
+      removeMem(mid);
+    };
+  }
+
   box.querySelectorAll('[data-pool]').forEach(function(el){
     el.ondragstart=function(e){
       CW.drag=el.dataset.pool; el.classList.add('dragging');
@@ -2850,6 +2873,32 @@ function drawPool(){
       addToSub(subs[subs.length-1].id, el.dataset.pool);
     };
   });
+}
+
+/* ย้ายคนที่อยู่ในงานแล้วไปทีมย่อยอื่น
+   หัวหน้าชุดมีได้คนเดียวต่อชุด — ถ้าปลายทางมีหัวหน้าอยู่แล้วจะปลดดาวคนที่ย้ายมา */
+async function moveMem(crewId, toSub){
+  var c=crewRows(CW.a).filter(function(x){ return x.id===crewId; })[0];
+  if(!c || c.subteam_id===toSub) return;
+  var patch={subteam_id:toSub};
+  if(c.is_lead && crewRows(CW.a).some(function(x){ return x.subteam_id===toSub && x.is_lead; }))
+    patch.is_lead=false;
+  var r=await db.from('it_assignment_crew').update(patch).eq('id',crewId);
+  if(r.error) return toast('ย้ายไม่สำเร็จ: '+r.error.message, 4500);
+  await loadCrew([CW.a.id]);
+  drawSubs(); renderSchedule();
+  var st=subsOf(CW.a).filter(function(s){ return s.id===toSub; })[0];
+  toast(fullName(staffOf(c.staff_id))+' → '+((st&&st.name)||'ทีมย่อย'), 2200);
+}
+
+/* เอาออกจากงานทั้งหมด — ใช้ตอนลากกลับไปวางที่คอลัมน์รายชื่อ */
+async function removeMem(crewId){
+  var c=crewRows(CW.a).filter(function(x){ return x.id===crewId; })[0];
+  var r=await db.from('it_assignment_crew').delete().eq('id',crewId);
+  if(r.error) return toast('เอาออกไม่สำเร็จ: '+r.error.message, 4500);
+  await loadCrew([CW.a.id]);
+  drawSubs(); drawPool(); renderSchedule();
+  if(c) toast(fullName(staffOf(c.staff_id))+' ออกจากงานนี้แล้ว', 2200);
 }
 
 async function addToSub(subId, staffId){
@@ -2883,12 +2932,19 @@ function drawSubs(){
       '</div>'+
       (mem.length? mem.map(function(c){
         var s=staffOf(c.staff_id);
-        return '<div class="cw-mem">'+
-          '<span style="flex:1;min-width:130px">'+
+        return '<div class="cw-mem" draggable="true" data-mem="'+c.id+'" data-in="'+st.id+'">'+
+          '<span class="g">⠿</span>'+
+          '<span style="flex:1;min-width:120px">'+
             '<span class="nm" style="font-size:13px">'+esc(fullName(s))+'</span>'+
             (c.is_lead?'<span class="chip c-purple" style="margin-left:6px">หัวหน้าชุด</span>':'')+
             '<div class="brow-s"><span class="tm">'+esc(s.emp_code||'')+'</span>'+
               (s.phone?'<span>'+esc(s.phone)+'</span>':'')+'</div></span>'+
+          (subs.length>1
+            ? '<select class="tin" data-move="'+c.id+'" style="min-width:120px" title="ย้ายไปทีมย่อยอื่น">'+
+                subs.map(function(o){
+                  return '<option value="'+o.id+'"'+(o.id===st.id?' selected':'')+'>'+esc(o.name)+'</option>';
+                }).join('')+'</select>'
+            : '')+
           '<select class="tin" data-duty="'+c.id+'" style="min-width:140px">'+
             '<option value="">— ยังไม่ระบุหน้าที่ —</option>'+
             duties.map(function(d){
@@ -2904,17 +2960,45 @@ function drawSubs(){
   /* ทีมย่อยเป็นจุดวาง */
   box.querySelectorAll('[data-sub]').forEach(function(el){
     el.ondragover=function(e){
-      if(!CW.drag) return;
-      e.preventDefault(); e.dataTransfer.dropEffect='copy'; el.classList.add('dropok');
+      if(!CW.drag && !CW.dragMem) return;
+      if(CW.dragMem && CW.dragFrom===el.dataset.sub) return;   /* ทีมย่อยเดิม ไม่ต้องไฮไลต์ */
+      e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('dropok');
     };
     el.ondragleave=function(){ el.classList.remove('dropok'); };
     el.ondrop=function(e){
       el.classList.remove('dropok');
-      if(!CW.drag) return;
+      if(!CW.drag && !CW.dragMem) return;
       e.preventDefault(); e.stopPropagation();
-      var sid=CW.drag; CW.drag=null;
-      addToSub(el.dataset.sub, sid);
+      if(CW.dragMem){
+        var mid=CW.dragMem; CW.dragMem=null; CW.dragFrom=null;
+        moveMem(mid, el.dataset.sub);
+      }else{
+        var sid=CW.drag; CW.drag=null;
+        addToSub(el.dataset.sub, sid);
+      }
     };
+  });
+
+  /* ต้นทางการลากของคนที่อยู่ในทีมย่อยแล้ว */
+  box.querySelectorAll('[data-mem]').forEach(function(el){
+    el.ondragstart=function(e){
+      /* กดที่ดรอปดาวน์หรือปุ่มแล้วอย่าเริ่มลาก ไม่งั้นเลือกค่าไม่ได้ */
+      if(e.target && e.target.closest && e.target.closest('select,button,input')){
+        e.preventDefault(); return false;
+      }
+      CW.dragMem=el.dataset.mem; CW.dragFrom=el.dataset.in; CW.drag=null;
+      el.classList.add('dragging');
+      try{ e.dataTransfer.setData('text/plain', CW.dragMem); e.dataTransfer.effectAllowed='move'; }catch(_){}
+    };
+    el.ondragend=function(){
+      el.classList.remove('dragging'); CW.dragMem=null; CW.dragFrom=null;
+      document.querySelectorAll('.dropok').forEach(function(c){ c.classList.remove('dropok'); });
+      var pl=document.querySelector('.cw-pool'); if(pl) pl.classList.remove('dropout');
+    };
+  });
+
+  box.querySelectorAll('[data-move]').forEach(function(el){
+    el.onchange=function(){ moveMem(el.dataset.move, el.value); };
   });
 
   box.querySelectorAll('[data-subname]').forEach(function(el){
