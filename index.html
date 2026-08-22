@@ -196,6 +196,9 @@ body.dragmode .pjob:active{cursor:grabbing}
 .pcell{min-width:138px;cursor:pointer;transition:background .1s}
 .pcell:hover{background:var(--accent-glow)}
 .pcell.sun{background:rgba(0,0,0,.028)}
+/* ป้ายวันสำคัญ — บอกให้รู้เฉย ๆ ไม่ได้ห้ามลงงาน */
+.dmark{font-weight:700;letter-spacing:.2px}
+.plan-wrap th.hol,.plan-wrap th.sun{border-bottom:2px solid rgba(255,59,48,.35)}
 .pcell.sun:hover{background:var(--accent-glow)}
 .pcol-today{box-shadow:inset 2px 0 0 var(--accent),inset -2px 0 0 var(--accent)}
 .pjob{border-radius:8px;padding:5px 7px;margin-bottom:4px;border-left:4px solid var(--accent);
@@ -321,7 +324,28 @@ body.dragmode .pjob:active{cursor:grabbing}
   .sh-c{left:50%;top:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);
     width:min(580px,92vw);max-width:none;margin:0;border-radius:18px;
     max-height:86vh;padding-bottom:0;animation:popIn .2s cubic-bezier(.32,.72,0,1)}
+  .sh-c.wide{width:min(1120px,96vw);max-height:90vh}
 }
+/* ── จัดทีมย่อย: ซ้ายทีมย่อย ขวารายชื่อทั้งหมด ลากใส่กันได้ ── */
+.cw-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:12px;align-items:start}
+@media(max-width:860px){.cw-grid{grid-template-columns:1fr}}
+.cw-col{min-width:0}
+.cw-pool{border:1px solid var(--border);border-radius:12px;background:var(--s1);overflow:hidden;
+  position:sticky;top:0}
+.cw-pool-h{padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;
+  display:flex;align-items:center;gap:8px}
+.cw-pool-l{max-height:52vh;overflow:auto}
+.cw-p{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--border);
+  cursor:grab;background:var(--bg);transition:.12s}
+.cw-p:hover{background:var(--accent-glow)}
+.cw-p:active{cursor:grabbing}
+.cw-p.dragging{opacity:.4}
+.cw-p .g{color:var(--text3);font-size:14px;flex:0 0 auto;line-height:1}
+.cw-sub{border:1.5px solid var(--border);border-radius:12px;margin-bottom:11px;background:var(--bg);
+  transition:.14s}
+.cw-sub.dropok{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);background:var(--accent-glow)}
+.cw-mem{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px solid var(--border);flex-wrap:wrap}
+.cw-empty{padding:16px 12px;text-align:center;font-size:12px;color:var(--text3);border-top:1px dashed var(--border)}
 .sh-h{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
 .sh-h .t{flex:1;font-size:16px;font-weight:700;letter-spacing:-.01em}
 .sh-h .x{background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;line-height:1}
@@ -472,7 +496,7 @@ body.preview #previewBar{display:flex}
 
 <script>
 /* ── ยามเฝ้า splash: อยู่นอกสคริปต์หลัก ถ้าสคริปต์หลักพัง ตัวนี้ยังทำงาน ── */
-window.APP_VER='7.1';
+window.APP_VER='7.3';
 (function(){
   var fill=function(){
     var a=document.querySelectorAll('.ver');
@@ -1139,8 +1163,7 @@ if(!activeCfg()){ setTimeout(function(){ open('list'); }, 250); }
           <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">เริ่มวันที่</label><input type="date" id="asgDate" class="tin"></div>
           <div><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">กี่วัน</label>
             <select id="asgDays" class="tin"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="12">12</option><option value="14">14</option></select></div>
-          <label style="font-size:11.5px;color:var(--text2);display:flex;align-items:center;gap:5px;padding-bottom:8px">
-            <input type="checkbox" id="asgSkipSun" checked> ข้ามวันอาทิตย์และวันหยุด</label>
+          <input type="hidden" id="asgSkipSun">
           <div style="flex:2;min-width:220px"><label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">ขอบเขตงาน — เข้าไปทำอะไรบ้าง</label><button type="button" id="asgScopeBtn" class="pickbtn"></button></div>
           <button class="btn" id="btnAsg" style="width:auto;padding:8px 18px">มอบหมาย</button>
         </div>
@@ -2452,11 +2475,16 @@ function renderSchedule(){
     var dt=new Date(d+'T00:00:00'), dow=dt.getDay(), hd=isHoliday(d);
     var free=teams.length - teams.filter(function(t){
       return S.plan.some(function(a){return a.team_id===t.id && a.work_date===d;}); }).length;
-    return '<th class="'+(d===today?'pcol-today ':'')+(hd?'hol':'')+'" title="'+esc(hd?(hd.name+(hd.note?(' — '+hd.note):'')):'')+'">'+
+    /* วันหยุด/วันอาทิตย์ = ป้ายบอกให้รู้เฉยๆ ไม่ได้ห้ามลงงาน งานของที่นี่ทำต่อเนื่องทุกวัน */
+    var sun = dow===0;
+    var tip = hd? (hd.name+(hd.note?(' — '+hd.note):'')) : (sun?'วันอาทิตย์':'');
+    return '<th class="'+(d===today?'pcol-today ':'')+(hd?'hol':(sun?'sun':''))+'" title="'+esc(tip)+'">'+
       '<span class="dw">'+DW_TH[dow]+'</span>'+dt.getDate()+' '+MO_TH[dt.getMonth()]+
       (hd
-        ? '<span class="dw" style="color:#c9251c">🏖 '+esc(hd.name)+'</span>'
-        : '<span class="dw" style="color:'+(free?'var(--text3)':'var(--green)')+'">'+(free? ('ว่าง '+free) : 'เต็ม')+'</span>')+
+        ? '<span class="dw dmark" style="color:#c9251c" title="'+esc(tip)+'">🏖 '+esc(hd.name)+'</span>'
+        : (sun
+          ? '<span class="dw dmark" style="color:#c9251c">วันอาทิตย์</span>'
+          : '<span class="dw" style="color:'+(free?'var(--text3)':'var(--green)')+'">'+(free? ('ว่าง '+free) : 'เต็ม')+'</span>'))+
     '</th>';
   }).join('')+'</tr>';
 
@@ -2472,7 +2500,8 @@ function renderSchedule(){
         var nSite=Object.keys(siteSet).length;
         var clash = nSite>1;
         if(clash) nClash++;
-        var cls='pcell'+(isHoliday(d)?' hol':(dt.getDay()===0?' sun':''))+(d===today?' pcol-today':'')+(clash?' clash':'');
+        var hdc=isHoliday(d);
+        var cls='pcell'+(hdc?' hol':(dt.getDay()===0?' sun':''))+(d===today?' pcol-today':'')+(clash?' clash':'');
         var inner=jobs.map(function(a){
           var st=AST[a.status]||AST.assigned, si=siteOf(a.site_id);
           var iss=S.issues.filter(function(x){ return x.site_id===a.site_id && x.status!=='closed' && x.status!=='resolved'; }).length;
@@ -2739,29 +2768,98 @@ function crewFlat(a){
   return out;
 }
 
-/* ── หน้าจัดทีมย่อย ── */
-var CW={a:null, q:'', target:null};
+/* ── หน้าจัดทีมย่อย: ซ้ายทีมย่อย ขวารายชื่อทั้งหมด ลากใส่กันได้ ── */
+var CW={a:null, q:'', drag:null};
 async function crewSheet(a){
   if(!a) return;
-  CW.a=a; CW.q=''; CW.target=null;
+  CW.a=a; CW.q=''; CW.drag=null;
   await loadCrew([a.id]);
   var si=siteOf(a.site_id), tm=teamOf(a.team_id);
   sheet('จัดทีมย่อยและหน้าที่',
     '<div style="background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.7">'+
-      '<b>'+esc(si.name||'—')+'</b> <span style="color:var(--text3)">'+esc(si.code||'')+'</span><br>'+
-      '<span style="color:var(--text2)">'+esc(tm.code||'')+' '+esc(tm.name||'')+' · '+dayText(a.work_date)+'</span></div>'+
-    '<div class="row" style="margin-bottom:12px">'+
-      '<button class="btn ghost sm" id="cwAddSub">＋ เพิ่มทีมย่อย</button>'+
-      '<button class="btn ghost sm" id="cwCopy">📋 คัดลอกจากวันก่อน</button>'+
-    '</div>'+
-    '<div id="cwSubs"></div>'+
-    '<button class="btn ghost sm" id="cwDuties" style="margin-top:12px">⚙️ ตั้งค่ารายการหน้าที่</button>'+
-    '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:10px">'+
-      'มีผลเฉพาะงานวันนี้ · แก้วันอื่นไม่กระทบกัน</p>', '');
-  drawSubs();
+      '<b>'+esc(si.name||'—')+'</b> <span style="color:var(--text3)">'+esc(si.code||'')+'</span>'+
+      ' <span style="color:var(--text2)">· '+esc(tm.code||'')+' '+esc(tm.name||'')+' · '+dayText(a.work_date)+'</span></div>'+
+    '<div class="cw-grid">'+
+      '<div class="cw-col">'+
+        '<div class="row" style="margin-bottom:11px">'+
+          '<button class="btn ghost sm" id="cwAddSub">＋ เพิ่มทีมย่อย</button>'+
+          '<button class="btn ghost sm" id="cwCopy">📋 คัดลอกจากวันก่อน</button>'+
+        '</div>'+
+        '<div id="cwSubs"></div>'+
+        '<button class="btn ghost sm" id="cwDuties" style="margin-top:4px">⚙️ ตั้งค่ารายการหน้าที่</button>'+
+      '</div>'+
+      '<div class="cw-col">'+
+        '<div class="cw-pool">'+
+          '<div class="cw-pool-h"><span>พนักงานทั้งหมด</span>'+
+            '<span id="cwPoolN" class="chip c-gray" style="margin-left:auto">—</span></div>'+
+          '<div style="padding:8px 10px;border-bottom:1px solid var(--border)">'+
+            '<input class="mt-q" id="cwQ" placeholder="🔍 ค้นหาชื่อ · รหัส · เบอร์โทร"></div>'+
+          '<div class="cw-pool-l" id="cwPool"></div>'+
+        '</div>'+
+        '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:9px">'+
+          'ลากชื่อจากรายการนี้ไปวางที่ทีมย่อยทางซ้าย หรือแตะชื่อเพื่อใส่ลงทีมย่อยล่างสุด<br>'+
+          'มีผลเฉพาะงานวันนี้ · แก้วันอื่นไม่กระทบกัน</p>'+
+      '</div>'+
+    '</div>', '', true);
+  drawSubs(); drawPool();
   $('cwAddSub').onclick=addSub;
   $('cwCopy').onclick=copyPrev;
   $('cwDuties').onclick=function(){ dutySheet(function(){ crewSheet(CW.a); }); };
+  $('cwQ').oninput=function(){ CW.q=this.value.trim().toLowerCase(); drawPool(); };
+}
+
+/* คนที่ยังไม่ได้อยู่ในงานนี้ — ลากได้ */
+function drawPool(){
+  var a=CW.a, box=$('cwPool'); if(!box) return;
+  var already=crewRows(a).map(function(c){ return c.staff_id; });
+  var pool=S.staff.filter(function(x){
+    return x.active && x.approved!==false && already.indexOf(x.id)<0 && (rank(x)<4 || isSuper(S.me));
+  });
+  var total=pool.length;
+  if(CW.q) pool=pool.filter(function(x){
+    return ((x.title||'')+' '+(x.name||'')+' '+(x.emp_code||'')+' '+(x.phone||''))
+      .toLowerCase().indexOf(CW.q)>=0;
+  });
+  pool.sort(function(x,y){ return String(x.emp_code).localeCompare(String(y.emp_code)); });
+  var nEl=$('cwPoolN');
+  if(nEl) nEl.textContent = CW.q? (pool.length+' / '+total) : (total+' คน');
+
+  box.innerHTML = pool.length? pool.map(function(x){
+    return '<div class="cw-p" draggable="true" data-pool="'+x.id+'">'+
+      '<span class="g">⠿</span>'+
+      '<span style="flex:1;min-width:0">'+
+        '<div class="nm" style="font-size:13px">'+esc(fullName(x))+'</div>'+
+        '<div class="brow-s" style="margin-top:1px"><span class="tm">'+esc(x.emp_code)+'</span>'+
+          (x.phone?'<span>'+esc(x.phone)+'</span>':'')+'</div></span></div>';
+  }).join('') : '<div class="cw-empty" style="border:none">'+
+      (CW.q? 'ไม่พบใครที่ตรงกับที่ค้น' : (total? '' : 'ทุกคนอยู่ในงานนี้แล้ว'))+'</div>';
+
+  box.querySelectorAll('[data-pool]').forEach(function(el){
+    el.ondragstart=function(e){
+      CW.drag=el.dataset.pool; el.classList.add('dragging');
+      try{ e.dataTransfer.setData('text/plain', CW.drag); e.dataTransfer.effectAllowed='copy'; }catch(_){}
+    };
+    el.ondragend=function(){
+      el.classList.remove('dragging'); CW.drag=null;
+      document.querySelectorAll('.cw-sub.dropok').forEach(function(c){ c.classList.remove('dropok'); });
+    };
+    /* บนมือถือลากไม่ได้ — แตะแล้วใส่ทีมย่อยล่างสุดให้แทน */
+    el.onclick=function(){
+      var subs=subsOf(CW.a);
+      if(!subs.length) return toast('เพิ่มทีมย่อยก่อน แล้วค่อยใส่คน');
+      addToSub(subs[subs.length-1].id, el.dataset.pool);
+    };
+  });
+}
+
+async function addToSub(subId, staffId){
+  var ins=await db.from('it_assignment_crew').insert({
+    assignment_id:CW.a.id, subteam_id:subId, staff_id:staffId, added_by:meName()});
+  if(ins.error) return toast('เพิ่มไม่สำเร็จ: '+ins.error.message, 4500);
+  await loadCrew([CW.a.id]);
+  drawSubs(); drawPool(); renderSchedule();
+  var st=subsOf(CW.a).filter(function(s){ return s.id===subId; })[0];
+  toast(fullName(staffOf(staffId))+' → '+((st&&st.name)||'ทีมย่อย'), 2200);
 }
 
 function drawSubs(){
@@ -2769,40 +2867,55 @@ function drawSubs(){
   var box=$('cwSubs'); if(!box) return;
   if(!subs.length){
     box.innerHTML='<div class="empty" style="padding:22px 14px"><b>ยังไม่มีทีมย่อย</b>'+
-      'กด “เพิ่มทีมย่อย” แล้วเลือกคนเข้าไป · เพิ่มได้หลายชุดตามที่ต้องการ</div>';
+      'กด “เพิ่มทีมย่อย” แล้วลากชื่อจากขวามาวาง · เพิ่มได้หลายชุดตามที่ต้องการ</div>';
     return;
   }
   var duties=(S.duties||[]).filter(function(d){ return d.active!==false; });
-  box.innerHTML=subs.map(function(st,i){
+  box.innerHTML=subs.map(function(st){
     var mem=rows.filter(function(c){ return c.subteam_id===st.id; })
       .sort(function(x,y){ return (y.is_lead?1:0)-(x.is_lead?1:0); });
-    return '<div class="card" style="margin-bottom:11px">'+
-      '<div class="card-h" style="padding:9px 12px">'+
+    return '<div class="cw-sub" data-sub="'+st.id+'">'+
+      '<div style="display:flex;align-items:center;gap:8px;padding:9px 11px">'+
         '<input class="mt-q" data-subname="'+st.id+'" value="'+esc(st.name)+'" '+
-          'style="flex:1;font-weight:700;text-transform:none;letter-spacing:0;padding:6px 9px">'+
+          'style="flex:1;font-weight:700;padding:6px 9px">'+
         '<span class="chip c-gray">'+mem.length+' คน</span>'+
         '<button class="tb-btn" data-subdel="'+st.id+'" title="ลบทีมย่อยนี้">🗑</button>'+
       '</div>'+
       (mem.length? mem.map(function(c){
         var s=staffOf(c.staff_id);
-        return '<div class="brow" style="cursor:default;display:flex;align-items:center;gap:9px;flex-wrap:wrap">'+
-          '<span style="flex:1;min-width:150px">'+
-            '<span class="nm">'+esc(fullName(s))+'</span>'+
+        return '<div class="cw-mem">'+
+          '<span style="flex:1;min-width:130px">'+
+            '<span class="nm" style="font-size:13px">'+esc(fullName(s))+'</span>'+
             (c.is_lead?'<span class="chip c-purple" style="margin-left:6px">หัวหน้าชุด</span>':'')+
             '<div class="brow-s"><span class="tm">'+esc(s.emp_code||'')+'</span>'+
               (s.phone?'<span>'+esc(s.phone)+'</span>':'')+'</div></span>'+
-          '<select class="tin" data-duty="'+c.id+'" style="min-width:150px">'+
+          '<select class="tin" data-duty="'+c.id+'" style="min-width:140px">'+
             '<option value="">— ยังไม่ระบุหน้าที่ —</option>'+
             duties.map(function(d){
               return '<option value="'+d.id+'"'+(c.duty_id===d.id?' selected':'')+'>'+esc(d.label)+'</option>';
             }).join('')+'</select>'+
-          '<button class="tb-btn" data-lead2="'+c.id+'">'+(c.is_lead?'★':'☆')+'</button>'+
-          '<button class="tb-btn" data-cwdel="'+c.id+'">✕</button>'+
+          '<button class="tb-btn" data-lead2="'+c.id+'" title="ตั้งเป็นหัวหน้าชุด">'+(c.is_lead?'★':'☆')+'</button>'+
+          '<button class="tb-btn" data-cwdel="'+c.id+'" title="เอาออก">✕</button>'+
         '</div>';
-      }).join('') : '<div class="empty" style="padding:14px">ยังไม่มีคนในทีมย่อยนี้</div>')+
-      '<div style="padding:9px 12px"><button class="btn ghost sm" data-addppl="'+st.id+'">＋ เพิ่มคนเข้าทีมย่อยนี้</button></div>'+
+      }).join('') : '<div class="cw-empty">ลากชื่อจากขวามาวางตรงนี้</div>')+
     '</div>';
   }).join('');
+
+  /* ทีมย่อยเป็นจุดวาง */
+  box.querySelectorAll('[data-sub]').forEach(function(el){
+    el.ondragover=function(e){
+      if(!CW.drag) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='copy'; el.classList.add('dropok');
+    };
+    el.ondragleave=function(){ el.classList.remove('dropok'); };
+    el.ondrop=function(e){
+      el.classList.remove('dropok');
+      if(!CW.drag) return;
+      e.preventDefault(); e.stopPropagation();
+      var sid=CW.drag; CW.drag=null;
+      addToSub(el.dataset.sub, sid);
+    };
+  });
 
   box.querySelectorAll('[data-subname]').forEach(function(el){
     el.onchange=async function(){
@@ -2816,7 +2929,7 @@ function drawSubs(){
       if(!confirm('ลบทีมย่อยนี้? คนที่อยู่ในทีมย่อยนี้จะถูกเอาออกจากงานวันนี้ด้วย')) return;
       var r=await db.from('it_subteams').delete().eq('id',b.dataset.subdel);
       if(r.error) return toast('ลบไม่สำเร็จ: '+r.error.message,4000);
-      await loadCrew([CW.a.id]); drawSubs(); renderSchedule();
+      await loadCrew([CW.a.id]); drawSubs(); drawPool(); renderSchedule();
     };
   });
   box.querySelectorAll('[data-duty]').forEach(function(el){
@@ -2830,8 +2943,7 @@ function drawSubs(){
     b.onclick=async function(){
       var id=b.dataset.lead2;
       var me=crewRows(CW.a).filter(function(c){ return c.id===id; })[0]; if(!me) return;
-      /* หัวหน้าชุดมีได้คนเดียวต่อทีมย่อย */
-      if(!me.is_lead){
+      if(!me.is_lead){          /* หัวหน้าชุดมีได้คนเดียวต่อทีมย่อย */
         var others=crewRows(CW.a).filter(function(c){ return c.subteam_id===me.subteam_id && c.is_lead; });
         for(var i=0;i<others.length;i++) await db.from('it_assignment_crew').update({is_lead:false}).eq('id',others[i].id);
       }
@@ -2843,11 +2955,8 @@ function drawSubs(){
     b.onclick=async function(){
       var r=await db.from('it_assignment_crew').delete().eq('id',b.dataset.cwdel);
       if(r.error) return toast('เอาออกไม่สำเร็จ: '+r.error.message,4000);
-      await loadCrew([CW.a.id]); drawSubs(); renderSchedule();
+      await loadCrew([CW.a.id]); drawSubs(); drawPool(); renderSchedule();
     };
-  });
-  box.querySelectorAll('[data-addppl]').forEach(function(b){
-    b.onclick=function(){ pickPeople(b.dataset.addppl); };
   });
 }
 
@@ -2856,7 +2965,7 @@ async function addSub(){
   var r=await db.from('it_subteams').insert({assignment_id:a.id,
     name:'ทีมย่อย '+(subs.length+1), sort:(subs.length+1)*10}).select().single();
   if(r.error) return toast('เพิ่มทีมย่อยไม่สำเร็จ: '+r.error.message,4500);
-  await loadCrew([a.id]); drawSubs();
+  await loadCrew([a.id]); drawSubs(); drawPool();
 }
 
 /* งานล่าสุดของทีมเดียวกันก่อนหน้าวันนี้ — เอาไว้คัดลอกรายชื่อมาทั้งชุด */
@@ -2871,52 +2980,8 @@ async function copyPrev(){
   if(!confirm('คัดลอกทีมย่อยและรายชื่อจาก '+dayText(prev.work_date)+' มาทั้งชุด?\n\nรายชื่อที่จัดไว้ในวันนี้จะถูกแทนที่')) return;
   var c=await db.rpc('rtp_copy_crew',{p_from:prev.id, p_to:a.id});
   if(c.error) return toast('คัดลอกไม่สำเร็จ: '+c.error.message,4500);
-  await loadCrew([a.id]); drawSubs(); renderSchedule();
+  await loadCrew([a.id]); drawSubs(); drawPool(); renderSchedule();
   toast('คัดลอกมา '+(c.data||0)+' คนแล้ว',3200);
-}
-
-/* ── เลือกคนเข้าทีมย่อย — ค้นหาได้ ── */
-function pickPeople(subId){
-  CW.target=subId; CW.q='';
-  var already=crewRows(CW.a).map(function(c){ return c.staff_id; });
-  sheet('เลือกคนเข้าทีมย่อย',
-    '<div class="fld"><input class="mt-q" id="ppQ" placeholder="🔍 ค้นหาชื่อ / รหัสพนักงาน / เบอร์โทร"></div>'+
-    '<div id="ppList" style="max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:11px"></div>'+
-    '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:10px">'+
-      'แตะชื่อเพื่อเพิ่มเข้าทีมย่อยทันที · คนที่อยู่ในงานนี้แล้วจะไม่ขึ้นในรายการ</p>',
-    '<button class="btn" onclick="crewSheet(CW.a)">เสร็จแล้ว</button>');
-
-  var draw=function(){
-    var pool=S.staff.filter(function(x){
-      return x.active && x.approved!==false && already.indexOf(x.id)<0 && (rank(x)<4 || isSuper(S.me));
-    });
-    if(CW.q) pool=pool.filter(function(x){
-      return ((x.title||'')+' '+(x.name||'')+' '+(x.emp_code||'')+' '+(x.phone||''))
-        .toLowerCase().indexOf(CW.q)>=0;
-    });
-    pool.sort(function(x,y){ return String(x.emp_code).localeCompare(String(y.emp_code)); });
-    $('ppList').innerHTML = pool.length? pool.map(function(x){
-      return '<div class="brow" data-pp="'+x.id+'" style="cursor:pointer">'+
-        '<div class="brow-t"><span class="nm">'+esc(fullName(x))+'</span></div>'+
-        '<div class="brow-s"><span class="tm">'+esc(x.emp_code)+'</span>'+
-          (x.phone?'<span>'+esc(x.phone)+'</span>':'')+'</div></div>';
-    }).join('') : '<div class="empty"><b>'+(CW.q?'ไม่พบใครที่ตรงกับที่ค้น':'ทุกคนอยู่ในงานนี้แล้ว')+'</b></div>';
-
-    $('ppList').querySelectorAll('[data-pp]').forEach(function(r){
-      r.onclick=async function(){
-        var id=r.dataset.pp;
-        var ins=await db.from('it_assignment_crew').insert({
-          assignment_id:CW.a.id, subteam_id:CW.target, staff_id:id, added_by:meName()});
-        if(ins.error) return toast('เพิ่มไม่สำเร็จ: '+ins.error.message,4500);
-        already.push(id);
-        await loadCrew([CW.a.id]);
-        toast(fullName(staffOf(id))+' เข้าทีมย่อยแล้ว',2200);
-        draw();
-      };
-    });
-  };
-  draw();
-  $('ppQ').oninput=function(){ CW.q=this.value.trim().toLowerCase(); draw(); };
 }
 
 /* ── ตั้งค่ารายการหน้าที่ ── */
@@ -3346,8 +3411,9 @@ function shiftTool(){
       '<div class="row"><select id="sf_dir"><option value="1">เลื่อนไปข้างหน้า →</option>'+
         '<option value="-1">ถอยกลับ ←</option></select>'+
       '<input type="number" id="sf_n" value="1" min="1" max="60" style="max-width:110px"></div>'+
-      '<label class="lg-rem" style="margin:9px 0 0"><input type="checkbox" id="sf_wd" checked> '+
-        'นับเฉพาะวันทำงาน — ข้ามวันอาทิตย์และวันหยุดโรงงาน</label></div>'+
+      '<input type="hidden" id="sf_wd">'+
+      '<p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:7px">'+
+        'นับเป็นวันปฏิทินตรง ๆ — งานลงวันอาทิตย์และวันหยุดได้ตามปกติ</p></div>'+
     '<div id="sf_prev" style="background:var(--s1);border:1px solid var(--border);border-radius:11px;'+
       'padding:11px 13px;font-size:12.5px;line-height:1.7;color:var(--text2)"></div>',
     '<button class="btn sm" id="sf_go">ดูรายการก่อน</button>');
@@ -3374,8 +3440,7 @@ function shiftTool(){
          (dd>0?('ไปข้างหน้า '+dd+' '):('ถอยกลับ '+Math.abs(dd)+' '))+(wd?'วันทำงาน':'วัน')+
          (sample? ('<br>ตัวอย่าง: '+dayText(sample.work_date)+'  →  <b style="color:var(--accent)">'+
                    dayText(newDate(sample.work_date, dd))+'</b>') : '')+
-         (offDays? ('<br><span style="color:#c9251c">⚠️ '+offDays+' ใบจะไปตกวันอาทิตย์หรือวันหยุด — ต้องมาปรับเองทีหลัง</span>')
-                 : (wd? '<br><span style="color:#1e8e3e">✓ ไม่มีใบไหนตกวันหยุด</span>' : ''))+
+         (offDays? ('<br><span style="color:var(--text2)">📅 '+offDays+' ใบจะไปตกวันอาทิตย์หรือวันหยุด — ลงงานได้ตามปกติ ระบบทำเครื่องหมายวันไว้ให้</span>') : '')+
          (ckd? ('<br><span style="color:var(--orange)">⚠️ '+ckd+' ใบเช็คอินไปแล้ว ประวัติจะย้ายตามไปด้วย</span>') : '')+
          '<br><span style="font-size:11.5px">เลื่อนเฉพาะงานที่โหลดอยู่ในช่วงที่ดูตอนนี้เท่านั้น</span>');
     $('sf_go').textContent = list.length? ('เลื่อน '+list.length+' ใบงาน') : 'ไม่มีงานให้เลื่อน';
@@ -3446,7 +3511,12 @@ async function moveJobTo(id, teamId, date){
 function isHoliday(d){ return (S.hols||[]).filter(function(h){ return h.hday===d; })[0]||null; }
 function isOff(d){ return new Date(d+'T00:00:00').getDay()===0 || !!isHoliday(d); }
 
-/* บวก/ลบเป็น "วันทำงาน" — ข้ามวันอาทิตย์และวันหยุดโรงงาน */
+/* งานของที่นี่ทำต่อเนื่องทุกวัน ไม่ข้ามวันอาทิตย์หรือวันหยุด
+   ฟังก์ชันชุด workDays* เก็บไว้เผื่ออนาคต แต่ตอนนี้ไม่ได้ใช้วางแผนแล้ว */
+function daysBetween(a, b){
+  return Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00'))/86400000);
+}
+/* บวก/ลบเป็น "วันทำงาน" — ข้ามวันอาทิตย์และวันหยุดโรงงาน (ไม่ได้ใช้ในโหมดปัจจุบัน) */
 function addWorkDays(d, n){
   var dir = n>=0? 1 : -1, left=Math.abs(n), cur=d, guard=0;
   while(left>0 && guard<3000){
@@ -3527,7 +3597,7 @@ function quickAssign(teamId, date){
       '<div class="row"><select id="q_days">'+
         [1,2,3,4,5,6,7,8,9,10,12,14].map(function(n){ return '<option value="'+n+'">'+n+' วัน</option>'; }).join('')+
       '</select>'+
-      '<label class="lg-rem" style="margin:0;flex:1.4"><input type="checkbox" id="q_skipsun" checked> ข้ามวันอาทิตย์และวันหยุด</label></div></div>'+
+      '<input type="hidden" id="q_skipsun"></div></div>'+
     '<div id="q_daylist"></div>',
     '<button class="btn sm" id="q_save">มอบหมาย</button>');
   lbl();
@@ -3811,12 +3881,12 @@ async function asgActions(a){
   $('mv_save').onclick=async function(){
     var nd=$('mv_date').value||a.work_date, nt=$('mv_team').value;
     if(nd===a.work_date && nt===a.team_id) return toast('ยังไม่ได้เปลี่ยนอะไร');
-    var wdDelta=workDaysBetween(a.work_date, nd);   /* นับเป็นวันทำงาน ข้ามวันอาทิตย์และวันหยุด */
+    var wdDelta=daysBetween(a.work_date, nd);      /* วันปฏิทินตรง ๆ — งานของที่นี่ไม่ข้ามวันหยุด */
     var list = (mode==='all')? series : [a];
     if(mode==='all' && nd!==a.work_date && list.length>1){
-      var lastNew=addWorkDays(list[list.length-1].work_date, wdDelta);
-      if(!confirm('เลื่อนทั้งชุด '+list.length+' วัน ครั้งละ '+Math.abs(wdDelta)+' วันทำงาน\n'+
-        '(ข้ามวันอาทิตย์และวันหยุดโรงงานให้อัตโนมัติ)\n\n'+
+      var lastNew=addDays(list[list.length-1].work_date, wdDelta);
+      if(!confirm('เลื่อนทั้งชุด '+list.length+' วัน ครั้งละ '+Math.abs(wdDelta)+' วัน\n'+
+        '(นับเป็นวันปฏิทินตรง ๆ)\n\n'+
         'วันแรก: '+dayText(a.work_date)+' → '+dayText(nd)+'\n'+
         'วันสุดท้าย: '+dayText(list[list.length-1].work_date)+' → '+dayText(lastNew))) {
         this.disabled=false; this.textContent='บันทึกการเปลี่ยนแปลง'; return;
@@ -4043,7 +4113,7 @@ var HELP_DASH=[
     'คลิกขวาที่ใบงาน = เปิดหน้าเลื่อนวัน ย้ายทีม หรือลบงานทันที',
     'กด Shift หรือ Ctrl ค้างไว้แล้วลากใบงานไปวางช่องอื่น = ย้ายวันหรือย้ายทีมทันที (แอดมินขึ้นไป)',
     'ปุ่ม ⏩ เลื่อนงานยกชุด ใช้ตอนต้องเลื่อนทั้งแผน เช่นประกาศหยุดเพิ่ม เลือกทีม ช่วงวัน แล้วเลื่อนทีเดียวทั้งก้อน',
-    'การเลื่อนนับเป็น “วันทำงาน” ข้ามวันอาทิตย์และวันหยุดโรงงานให้เอง ไม่มีงานตกวันหยุด (ปิดโหมดนี้ได้ถ้าต้องการนับวันปฏิทิน)',
+    'การเลื่อนนับเป็นวันปฏิทินตรง ๆ — งานลงวันอาทิตย์และวันหยุดได้ ระบบแค่ทำเครื่องหมายวันสำคัญไว้ให้เห็น',
     'ใบงานที่มีพื้นสีอ่อนคือชุดงานหลายวันของไซต์+ทีมเดียวกัน แต่ละชุดคนละสี บนใบบอกว่าเป็นวันที่เท่าไหร่ของชุด',
     'ต้องกดปุ่มค้างก่อนถึงจะลากได้ กันลากผิดตอนคลิกดูรายละเอียดตามปกติ',
     'ใบงานที่มีป้าย “↪ งานยกมา” คืองานค้างจากวันก่อนที่ระบบยกมาให้เอง เช็กลิสต์เหลือเฉพาะข้อที่ยังไม่ได้ทำ',
@@ -4981,8 +5051,10 @@ $('btnAddTeam').onclick=function(){ teamForm(null); };
   q.oninput=function(){ MT_Q=q.value.trim().toLowerCase(); renderStaff(); };
 })();
 
-function sheet(title, bodyHTML, footHTML){
+function sheet(title, bodyHTML, footHTML, wide){
   $('shT').textContent=title; $('shB').innerHTML=bodyHTML; $('shF').innerHTML=footHTML||'';
+  var c=document.querySelector('#sheet .sh-c');
+  if(c) c.classList.toggle('wide', !!wide);      /* กว้างเฉพาะแผ่นที่ต้องใช้พื้นที่จริง */
   $('sheet').classList.add('open');
 }
 function closeSheet(){ $('sheet').classList.remove('open'); }
